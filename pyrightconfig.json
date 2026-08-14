@@ -1,0 +1,6 @@
+{
+  "include": ["flight_tracker", "tests"],
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": "none",
+  "reportMissingModuleSource": "none"
+}

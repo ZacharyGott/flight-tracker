@@ -1,0 +1,131 @@
+"""adsb.lol provider adapter."""
+
+import json
+from datetime import datetime, timezone
+from typing import TypeGuard, cast
+
+from .exceptions import ProviderHttpError, ProviderResponseError
+from .models import Aircraft, NearbyQuery, NearbySnapshot, Position
+from .transport import HttpTransport, RequestsTransport
+
+
+DEFAULT_BASE_URL = "https://api.adsb.lol"
+JsonObject = dict[str, object]
+
+
+class AdsbLolClient:
+    """Retrieve nearby aircraft from adsb.lol."""
+
+    def __init__(
+        self,
+        transport: HttpTransport | None = None,
+        base_url: str = DEFAULT_BASE_URL,
+    ) -> None:
+        self._transport = transport or RequestsTransport()
+        self._base_url = base_url.rstrip("/")
+
+    def nearby(self, query: NearbyQuery) -> NearbySnapshot:
+        """Return aircraft in the query radius."""
+
+        url = self._nearby_url(query)
+        response = self._transport.get(url)
+        if not 200 <= response.status_code < 300:
+            raise ProviderHttpError(response.status_code, url)
+        return self._parse_response(query, response.body)
+
+    def _nearby_url(self, query: NearbyQuery) -> str:
+        return (
+            f"{self._base_url}/v2/lat/{query.latitude}"
+            f"/lon/{query.longitude}/dist/{query.radius_nm}"
+        )
+
+    def _parse_response(self, query: NearbyQuery, body: str) -> NearbySnapshot:
+        try:
+            payload: object = json.loads(body)
+        except json.JSONDecodeError as error:
+            raise ProviderResponseError("provider response is not valid JSON") from error
+
+        if not isinstance(payload, dict):
+            raise ProviderResponseError("provider response must be a JSON object")
+        response = cast(JsonObject, payload)
+
+        raw_aircraft = response.get("ac")
+        raw_now = response.get("now")
+        if not isinstance(raw_aircraft, list):
+            raise ProviderResponseError("provider response must contain an aircraft list")
+        if isinstance(raw_now, bool) or not isinstance(raw_now, int):
+            raise ProviderResponseError("provider response must contain an integer timestamp")
+
+        try:
+            observed_at = datetime.fromtimestamp(raw_now, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError) as error:
+            raise ProviderResponseError("provider timestamp is invalid") from error
+
+        aircraft_records = cast(list[object], raw_aircraft)
+        aircraft = tuple(self._parse_aircraft(item) for item in aircraft_records)
+        return NearbySnapshot(query=query, aircraft=aircraft, observed_at=observed_at)
+
+    def _parse_aircraft(self, value: object) -> Aircraft:
+        if not isinstance(value, dict):
+            raise ProviderResponseError("each aircraft record must be a JSON object")
+        record = cast(JsonObject, value)
+
+        raw_hex = record.get("hex")
+        if not isinstance(raw_hex, str) or not raw_hex.strip():
+            raise ProviderResponseError("each aircraft record must contain a hex identifier")
+
+        position = self._parse_position(record)
+        try:
+            return Aircraft(
+                icao_hex=raw_hex.strip(),
+                position=position,
+                callsign=_optional_text(record.get("flight")),
+                registration=_optional_text(record.get("r")),
+                aircraft_type=_optional_text(record.get("t")),
+                altitude_feet=_optional_int(record.get("alt_baro")),
+                track_degrees=_optional_float(record.get("track")),
+            )
+        except ValueError as error:
+            raise ProviderResponseError("aircraft record contains invalid data") from error
+
+    def _parse_position(self, value: JsonObject) -> Position | None:
+        latitude = value.get("lat")
+        longitude = value.get("lon")
+        if latitude is None or longitude is None:
+            return None
+        if not _is_real(latitude) or not _is_real(longitude):
+            raise ProviderResponseError("aircraft position must contain numeric coordinates")
+        try:
+            return Position(latitude=float(latitude), longitude=float(longitude))
+        except ValueError as error:
+            raise ProviderResponseError("aircraft position is outside valid bounds") from error
+
+
+def _optional_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _optional_float(value: object) -> float | None:
+    if not _is_real(value):
+        return None
+    return float(value)
+
+
+def _is_real(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
