@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from flight_tracker.geo import Position
 from flight_tracker.flight_data import (
     AdsbLolClient,
     HttpResponse,
     NearbyQuery,
-    Position,
     ProviderHttpError,
     ProviderResponseError,
     RequestsTransport,
@@ -36,26 +36,26 @@ class FailingTransport:
 
 class NearbyQueryTests(unittest.TestCase):
     def test_accepts_provider_limits(self) -> None:
-        self.assertEqual(NearbyQuery(-90, 180, 250).radius_nm, 250)
+        self.assertEqual(NearbyQuery(Position(-90, 180), 250).radius_nm, 250)
 
     def test_rejects_invalid_coordinates(self) -> None:
         with self.assertRaises(ValueError):
-            NearbyQuery(-90.1, 0, 10)
+            Position(-90.1, 0)
         with self.assertRaises(ValueError):
-            NearbyQuery(0, 180.1, 10)
+            Position(0, 180.1)
 
     def test_rejects_invalid_radius(self) -> None:
         with self.assertRaises(ValueError):
-            NearbyQuery(0, 0, -1)
+            NearbyQuery(Position(0, 0), -1)
         with self.assertRaises(ValueError):
-            NearbyQuery(0, 0, 251)
+            NearbyQuery(Position(0, 0), 251)
         with self.assertRaises(ValueError):
-            NearbyQuery(0, 0, 10.5)  # type: ignore[arg-type]
+            NearbyQuery(Position(0, 0), 10.5)  # type: ignore[arg-type]
 
 
 class AdsbLolClientTests(unittest.TestCase):
     def test_builds_url_and_converts_aircraft(self) -> None:
-        query = NearbyQuery(40, -74, 20)
+        query = NearbyQuery(Position(40, -74), 20)
         response = HttpResponse(
             status_code=200,
             body=json.dumps(
@@ -121,7 +121,9 @@ class AdsbLolClientTests(unittest.TestCase):
             ),
         )
 
-        snapshot = AdsbLolClient(FakeTransport(response)).nearby(NearbyQuery(40, -74, 20))
+        snapshot = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(Position(40, -74), 20)
+        )
 
         aircraft = snapshot.aircraft[0]
         self.assertIsNone(aircraft.position)
@@ -134,7 +136,9 @@ class AdsbLolClientTests(unittest.TestCase):
     def test_handles_empty_response(self) -> None:
         response = HttpResponse(status_code=200, body=json.dumps({"now": 1_725_000_000, "ac": []}))
 
-        snapshot = AdsbLolClient(FakeTransport(response)).nearby(NearbyQuery(0, 0, 0))
+        snapshot = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(Position(0, 0), 0)
+        )
 
         self.assertEqual(snapshot.aircraft, ())
 
@@ -142,13 +146,17 @@ class AdsbLolClientTests(unittest.TestCase):
         response = HttpResponse(status_code=200, body="not-json")
 
         with self.assertRaises(ProviderResponseError):
-            AdsbLolClient(FakeTransport(response)).nearby(NearbyQuery(0, 0, 10))
+            AdsbLolClient(FakeTransport(response)).nearby(
+                NearbyQuery(Position(0, 0), 10)
+            )
 
     def test_rejects_malformed_response_envelope(self) -> None:
         response = HttpResponse(status_code=200, body=json.dumps({"now": 1_725_000_000}))
 
         with self.assertRaises(ProviderResponseError):
-            AdsbLolClient(FakeTransport(response)).nearby(NearbyQuery(0, 0, 10))
+            AdsbLolClient(FakeTransport(response)).nearby(
+                NearbyQuery(Position(0, 0), 10)
+            )
 
     def test_rejects_malformed_aircraft_record(self) -> None:
         response = HttpResponse(
@@ -157,19 +165,23 @@ class AdsbLolClientTests(unittest.TestCase):
         )
 
         with self.assertRaises(ProviderResponseError):
-            AdsbLolClient(FakeTransport(response)).nearby(NearbyQuery(0, 0, 10))
+            AdsbLolClient(FakeTransport(response)).nearby(
+                NearbyQuery(Position(0, 0), 10)
+            )
 
     def test_raises_for_provider_http_error(self) -> None:
         transport = FakeTransport(HttpResponse(status_code=429, body="{}"))
 
         with self.assertRaises(ProviderHttpError) as context:
-            AdsbLolClient(transport).nearby(NearbyQuery(0, 0, 10))
+            AdsbLolClient(transport).nearby(NearbyQuery(Position(0, 0), 10))
 
         self.assertEqual(context.exception.status_code, 429)
 
     def test_propagates_transport_error(self) -> None:
         with self.assertRaises(TransportError):
-            AdsbLolClient(FailingTransport()).nearby(NearbyQuery(0, 0, 10))
+            AdsbLolClient(FailingTransport()).nearby(
+                NearbyQuery(Position(0, 0), 10)
+            )
 
 
 class RequestsTransportTests(unittest.TestCase):

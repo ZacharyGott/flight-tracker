@@ -22,8 +22,8 @@ Get all aircraft in a specified nautical-mile radius around a latitude and a lon
 Endpoint: /v2/lat/{lat}/lon/{lon}/dist/{radius}
 <br>e.g. https://api.adsb.lol/v2/lat/40/lon/-74/dist/20
 
-Use `NearbyQuery` for the coordinates and radius. Use `AdsbLolClient.nearby`
-to retrieve a `NearbySnapshot`.
+Create a `Position` for the center point. Use `NearbyQuery` for the position
+and radius. Use `AdsbLolClient.nearby` to retrieve a `NearbySnapshot`.
 
 The client preserves aircraft without current coordinates. Their `position`
 field is `None`. The client does not use `lastPosition` as a fallback.

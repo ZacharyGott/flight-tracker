@@ -7,7 +7,7 @@ from .exceptions import (
     ProviderResponseError,
     TransportError,
 )
-from .models import Aircraft, NearbyQuery, NearbySnapshot, Position
+from .models import Aircraft, NearbyQuery, NearbySnapshot
 from .transport import HttpResponse, HttpTransport, RequestsTransport
 
 __all__ = [
@@ -18,10 +18,8 @@ __all__ = [
     "HttpTransport",
     "NearbyQuery",
     "NearbySnapshot",
-    "Position",
     "ProviderHttpError",
     "ProviderResponseError",
     "RequestsTransport",
     "TransportError",
 ]
-

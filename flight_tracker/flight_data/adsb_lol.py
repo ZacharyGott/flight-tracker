@@ -4,8 +4,9 @@ import json
 from datetime import datetime, timezone
 from typing import TypeGuard, cast
 
+from ..geo import Position
 from .exceptions import ProviderHttpError, ProviderResponseError
-from .models import Aircraft, NearbyQuery, NearbySnapshot, Position
+from .models import Aircraft, NearbyQuery, NearbySnapshot
 from .transport import HttpTransport, RequestsTransport
 
 
@@ -35,8 +36,8 @@ class AdsbLolClient:
 
     def _nearby_url(self, query: NearbyQuery) -> str:
         return (
-            f"{self._base_url}/v2/lat/{query.latitude}"
-            f"/lon/{query.longitude}/dist/{query.radius_nm}"
+            f"{self._base_url}/v2/lat/{query.position.latitude}"
+            f"/lon/{query.position.longitude}/dist/{query.radius_nm}"
         )
 
     def _parse_response(self, query: NearbyQuery, body: str) -> NearbySnapshot:

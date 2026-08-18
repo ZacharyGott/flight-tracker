@@ -16,6 +16,11 @@ dev = [
     "pyright>=1.1.390",
     "types-requests>=2.31",
 ]
+macos = [
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-CoreLocation>=10",
+    "py2app>=0.28",
+]
 
 [tool.setuptools.packages.find]
 include = ["flight_tracker*"]
