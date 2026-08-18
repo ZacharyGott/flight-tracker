@@ -7,8 +7,9 @@ from .exceptions import (
     ProviderResponseError,
     TransportError,
 )
-from .models import Aircraft, NearbyQuery, NearbySnapshot, Position
+from .models import NearbyQuery, NearbySnapshot
 from .transport import HttpResponse, HttpTransport, RequestsTransport
+from flight_tracker.models import Aircraft, Position
 
 __all__ = [
     "AdsbLolClient",
@@ -24,4 +25,3 @@ __all__ = [
     "RequestsTransport",
     "TransportError",
 ]
-

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A typed flight tracker for Raspberry Pi hardware"
 requires-python = ">=3.11"
 dependencies = [
+    "pygame-ce>=2.5.7,<3",
     "requests>=2.31,<3",
 ]
 

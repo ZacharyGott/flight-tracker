@@ -1,5 +1,8 @@
 {
-  "include": ["flight_tracker", "tests"],
+  "include": ["flight_tracker", "tests", "radar.py"],
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv",
   "typeCheckingMode": "strict",
   "reportMissingTypeStubs": "none",
   "reportMissingModuleSource": "none"

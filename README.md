@@ -1,3 +1,32 @@
-(08/14/2026)
+(08/18/2026)
 
-# A Flight Tracker With Basic Functionality Intended For Hardware
+# Flight Tracker
+
+This project displays nearby aircraft on a radar-style circular display.
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+python3 radar.py
+```
+
+The default display is 800 by 800 pixels. The default center is latitude
+40.0 and longitude -70.0. The default search radius is 100 nautical miles.
+
+You can set the center and radius with command-line options:
+
+```bash
+python3 radar.py --latitude 40 --longitude -70 --radius 50
+```
+
+## Current limits
+
+- The display shows current positions only.
+- The display does not show paths yet.
+- The application uses a configured location.
+- The application does not access GPS hardware.
+- The target screen resolution is not selected.
+- adsb.lol can return no aircraft for a valid request.

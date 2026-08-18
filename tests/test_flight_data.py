@@ -60,7 +60,7 @@ class AdsbLolClientTests(unittest.TestCase):
             status_code=200,
             body=json.dumps(
                 {
-                    "now": 1_725_000_000,
+                    "now": 1_725_000_000_000,
                     "ac": [
                         {
                             "hex": "abc123",

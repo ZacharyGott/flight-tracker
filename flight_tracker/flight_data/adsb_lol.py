@@ -4,8 +4,10 @@ import json
 from datetime import datetime, timezone
 from typing import TypeGuard, cast
 
+from flight_tracker.models import Aircraft, Position
+
 from .exceptions import ProviderHttpError, ProviderResponseError
-from .models import Aircraft, NearbyQuery, NearbySnapshot, Position
+from .models import NearbyQuery, NearbySnapshot
 from .transport import HttpTransport, RequestsTransport
 
 
@@ -56,8 +58,9 @@ class AdsbLolClient:
         if isinstance(raw_now, bool) or not isinstance(raw_now, int):
             raise ProviderResponseError("provider response must contain an integer timestamp")
 
+        timestamp_seconds = raw_now / 1000 if raw_now >= 10_000_000_000 else raw_now
         try:
-            observed_at = datetime.fromtimestamp(raw_now, tz=timezone.utc)
+            observed_at = datetime.fromtimestamp(timestamp_seconds, tz=timezone.utc)
         except (OverflowError, OSError, ValueError) as error:
             raise ProviderResponseError("provider timestamp is invalid") from error
 
