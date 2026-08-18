@@ -13,6 +13,9 @@ python -m pip install -e ".[dev]"
 python3 radar.py
 ```
 
+Aircraft markers move between API updates. The movement uses ground speed and
+ground track. The display does not show a retained trail.
+
 The default display is 800 by 800 pixels. The default center is latitude
 40.0 and longitude -70.0. The default search radius is 100 nautical miles.
 
@@ -24,8 +27,6 @@ python3 radar.py --latitude 40 --longitude -70 --radius 50
 
 ## Current limits
 
-- The display shows current positions only.
-- The display does not show paths yet.
 - The application uses a configured location.
 - The application does not access GPS hardware.
 - The target screen resolution is not selected.

@@ -1,7 +1,7 @@
 """adsb.lol provider adapter."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TypeGuard, cast
 
 from flight_tracker.models import Aircraft, Position
@@ -65,10 +65,12 @@ class AdsbLolClient:
             raise ProviderResponseError("provider timestamp is invalid") from error
 
         aircraft_records = cast(list[object], raw_aircraft)
-        aircraft = tuple(self._parse_aircraft(item) for item in aircraft_records)
+        aircraft = tuple(
+            self._parse_aircraft(item, observed_at) for item in aircraft_records
+        )
         return NearbySnapshot(query=query, aircraft=aircraft, observed_at=observed_at)
 
-    def _parse_aircraft(self, value: object) -> Aircraft:
+    def _parse_aircraft(self, value: object, observed_at: datetime) -> Aircraft:
         if not isinstance(value, dict):
             raise ProviderResponseError("each aircraft record must be a JSON object")
         record = cast(JsonObject, value)
@@ -78,6 +80,12 @@ class AdsbLolClient:
             raise ProviderResponseError("each aircraft record must contain a hex identifier")
 
         position = self._parse_position(record)
+        seen_position_seconds = _optional_float(record.get("seen_pos"))
+        position_observed_at = (
+            observed_at - timedelta(seconds=seen_position_seconds)
+            if position is not None and seen_position_seconds is not None
+            else None
+        )
         try:
             return Aircraft(
                 icao_hex=raw_hex.strip(),
@@ -87,6 +95,8 @@ class AdsbLolClient:
                 aircraft_type=_optional_text(record.get("t")),
                 altitude_feet=_optional_int(record.get("alt_baro")),
                 track_degrees=_optional_float(record.get("track")),
+                ground_speed_knots=_optional_float(record.get("gs")),
+                position_observed_at=position_observed_at,
             )
         except ValueError as error:
             raise ProviderResponseError("aircraft record contains invalid data") from error

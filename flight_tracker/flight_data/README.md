@@ -28,5 +28,8 @@ to retrieve a `NearbySnapshot`.
 The client preserves aircraft without current coordinates. Their `position`
 field is `None`. The client does not use `lastPosition` as a fallback.
 
+Aircraft can include `ground_speed_knots` and `position_observed_at`. The
+poller uses one worker thread. The display thread receives immutable results.
+
 The module does not add retries, caching, rate-limit handling, authentication,
 or display logic at this stage.

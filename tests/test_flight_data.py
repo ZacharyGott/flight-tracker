@@ -2,7 +2,7 @@
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -71,6 +71,8 @@ class AdsbLolClientTests(unittest.TestCase):
                             "lon": -73.75,
                             "alt_baro": "35000",
                             "track": 270.5,
+                            "gs": 420.0,
+                            "seen_pos": 2.5,
                             "type": "adsb_icao",
                         }
                     ],
@@ -97,6 +99,11 @@ class AdsbLolClientTests(unittest.TestCase):
         self.assertEqual(snapshot.aircraft[0].position, Position(40.25, -73.75))
         self.assertEqual(snapshot.aircraft[0].altitude_feet, 35000)
         self.assertEqual(snapshot.aircraft[0].track_degrees, 270.5)
+        self.assertEqual(snapshot.aircraft[0].ground_speed_knots, 420.0)
+        self.assertEqual(
+            snapshot.aircraft[0].position_observed_at,
+            snapshot.observed_at - timedelta(seconds=2.5),
+        )
 
     def test_preserves_aircraft_without_current_position(self) -> None:
         response = HttpResponse(
@@ -130,6 +137,42 @@ class AdsbLolClientTests(unittest.TestCase):
         self.assertIsNone(aircraft.aircraft_type)
         self.assertIsNone(aircraft.altitude_feet)
         self.assertIsNone(aircraft.track_degrees)
+        self.assertIsNone(aircraft.ground_speed_knots)
+        self.assertIsNone(aircraft.position_observed_at)
+
+    def test_missing_ground_speed_produces_none(self) -> None:
+        response = HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+                    "now": 1_725_000_000,
+                    "ac": [{"hex": "abc123", "lat": 40, "lon": -74}],
+                }
+            ),
+        )
+
+        aircraft = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(40, -74, 20)
+        ).aircraft[0]
+
+        self.assertIsNone(aircraft.ground_speed_knots)
+
+    def test_missing_position_age_produces_none(self) -> None:
+        response = HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+                    "now": 1_725_000_000,
+                    "ac": [{"hex": "abc123", "lat": 40, "lon": -74}],
+                }
+            ),
+        )
+
+        aircraft = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(40, -74, 20)
+        ).aircraft[0]
+
+        self.assertIsNone(aircraft.position_observed_at)
 
     def test_handles_empty_response(self) -> None:
         response = HttpResponse(status_code=200, body=json.dumps({"now": 1_725_000_000, "ac": []}))

@@ -11,7 +11,7 @@ from flight_tracker.app import TrackerApplication
 from flight_tracker.configuration import TrackerSettings, parse_settings
 from flight_tracker.display.pygame_display import calculate_radar_radius
 from flight_tracker.display.projection import RadarPoint, project_position
-from flight_tracker.flight_data import NearbyQuery, NearbySnapshot, TransportError
+from flight_tracker.flight_data import NearbyQuery, NearbySnapshot, PollResult
 from flight_tracker.location import ConfiguredLocationProvider
 from flight_tracker.models import Aircraft, Position
 
@@ -105,17 +105,22 @@ class DisplayBoundsTests(unittest.TestCase):
         self.assertEqual((center - radius, center + radius), (20, 780))
 
 
-class FakeFlightDataProvider:
-    def __init__(self, responses: list[NearbySnapshot | Exception]) -> None:
-        self.responses = responses
+class FakeSnapshotPoller:
+    def __init__(self, results: list[PollResult] | None = None) -> None:
+        self.results = results or []
         self.queries: list[NearbyQuery] = []
+        self.stopped = False
 
-    def nearby(self, query: NearbyQuery) -> NearbySnapshot:
+    def start(self, query: NearbyQuery) -> None:
         self.queries.append(query)
-        response = self.responses.pop(0)
-        if isinstance(response, Exception):
-            raise response
-        return response
+
+    def drain(self) -> tuple[PollResult, ...]:
+        results = tuple(self.results)
+        self.results.clear()
+        return results
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class FakeLocationProvider:
@@ -159,14 +164,9 @@ class FakeDisplay:
 class TrackerApplicationTests(unittest.TestCase):
     OBSERVED_AT = datetime.fromtimestamp(1_725_000_000, tz=timezone.utc)
 
-    def test_refresh_uses_location_coordinates_and_radius(self) -> None:
+    def test_starts_poller_with_location_coordinates_and_radius(self) -> None:
         position = Position(41.0, -71.0)
-        snapshot = NearbySnapshot(
-            query=NearbyQuery(41.0, -71.0, 50),
-            aircraft=(),
-            observed_at=self.OBSERVED_AT,
-        )
-        flight_data = FakeFlightDataProvider([snapshot])
+        flight_data = FakeSnapshotPoller()
         location = FakeLocationProvider(position)
         display = FakeDisplay(frames=1)
         settings = TrackerSettings(
@@ -177,10 +177,10 @@ class TrackerApplicationTests(unittest.TestCase):
         )
 
         TrackerApplication(
-            flight_data,
-            location,
-            display,
-            settings,
+            flight_data_poller=flight_data,
+            location_provider=location,
+            display=display,
+            settings=settings,
             clock=lambda: 0.0,
         ).run()
 
@@ -188,33 +188,67 @@ class TrackerApplicationTests(unittest.TestCase):
         self.assertEqual(location.calls, 1)
         self.assertEqual(display.rendered[0][0], position)
         self.assertTrue(display.closed)
+        self.assertTrue(flight_data.stopped)
 
-    def test_failed_refresh_preserves_last_successful_data(self) -> None:
-        aircraft = (Aircraft(icao_hex="abc123", position=None),)
+    def test_renders_when_poller_has_no_result(self) -> None:
+        settings = TrackerSettings()
+        flight_data = FakeSnapshotPoller()
+        display = FakeDisplay(frames=1)
+
+        TrackerApplication(
+            flight_data_poller=flight_data,
+            location_provider=FakeLocationProvider(settings.position),
+            display=display,
+            settings=settings,
+            clock=lambda: 0.0,
+        ).run()
+
+        self.assertEqual(display.rendered[0][1], ())
+
+    def test_applies_successful_snapshot(self) -> None:
+        aircraft = (Aircraft(icao_hex="abc123", position=Position(40.5, -70.5)),)
         snapshot = NearbySnapshot(
             query=NearbyQuery(40.0, -70.0, 100),
             aircraft=aircraft,
             observed_at=self.OBSERVED_AT,
         )
-        flight_data = FakeFlightDataProvider([snapshot, TransportError("offline")])
-        display = FakeDisplay(frames=2)
-        clock_values = iter((0.0, 11.0))
+        flight_data = FakeSnapshotPoller(
+            [PollResult(received_at=0.0, snapshot=snapshot)]
+        )
+        display = FakeDisplay(frames=1)
+        settings = TrackerSettings()
+
+        TrackerApplication(
+            flight_data_poller=flight_data,
+            location_provider=FakeLocationProvider(settings.position),
+            display=display,
+            settings=settings,
+            clock=lambda: 0.0,
+        ).run()
+
+        self.assertEqual(display.rendered[0][1], aircraft)
+
+    def test_prints_poll_error_and_keeps_rendering(self) -> None:
+        flight_data = FakeSnapshotPoller(
+            [PollResult(received_at=0.0, error_message="offline")]
+        )
+        display = FakeDisplay(frames=1)
         settings = TrackerSettings()
 
         output = io.StringIO()
         with redirect_stdout(output):
             TrackerApplication(
-                flight_data,
-                FakeLocationProvider(settings.position),
-                display,
-                settings,
-                clock=lambda: next(clock_values),
+                flight_data_poller=flight_data,
+                location_provider=FakeLocationProvider(settings.position),
+                display=display,
+                settings=settings,
+                clock=lambda: 0.0,
             ).run()
 
-        self.assertEqual(display.rendered[0][1], aircraft)
-        self.assertEqual(display.rendered[1][1], aircraft)
+        self.assertEqual(len(display.rendered), 1)
         self.assertIn("flight-data refresh failed: offline", output.getvalue())
         self.assertTrue(display.closed)
+        self.assertTrue(flight_data.stopped)
 
 
 if __name__ == "__main__":

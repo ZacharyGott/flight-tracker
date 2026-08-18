@@ -8,6 +8,7 @@ from .exceptions import (
     TransportError,
 )
 from .models import NearbyQuery, NearbySnapshot
+from .poller import PollResult, SnapshotPoller
 from .transport import HttpResponse, HttpTransport, RequestsTransport
 from flight_tracker.models import Aircraft, Position
 
@@ -20,8 +21,10 @@ __all__ = [
     "NearbyQuery",
     "NearbySnapshot",
     "Position",
+    "PollResult",
     "ProviderHttpError",
     "ProviderResponseError",
     "RequestsTransport",
+    "SnapshotPoller",
     "TransportError",
 ]

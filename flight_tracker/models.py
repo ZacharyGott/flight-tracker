@@ -1,6 +1,7 @@
 """Provider-independent flight domain models."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,3 +29,6 @@ class Aircraft:
     aircraft_type: str | None = None
     altitude_feet: int | None = None
     track_degrees: float | None = None
+    ground_speed_knots: float | None = None
+    position_observed_at: datetime | None = None
+    is_stale: bool = False

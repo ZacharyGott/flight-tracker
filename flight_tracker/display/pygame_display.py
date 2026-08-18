@@ -11,6 +11,7 @@ from .projection import project_position
 
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
+LIGHT_GREY = (180, 180, 180)
 EDGE_MARGIN = 20
 AIRCRAFT_RADIUS = 5
 
@@ -90,7 +91,8 @@ class PygameRadarDisplay:
                 pixel_center[0] + round(point.east * radar_radius),
                 pixel_center[1] - round(point.north * radar_radius),
             )
-            pygame.draw.circle(self._screen, GREEN, pixel_position, AIRCRAFT_RADIUS)
+            color = LIGHT_GREY if item.is_stale else GREEN
+            pygame.draw.circle(self._screen, color, pixel_position, AIRCRAFT_RADIUS)
 
         pygame.display.flip()
 
