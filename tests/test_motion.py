@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 from flight_tracker.flight_data import NearbyQuery, NearbySnapshot
 from flight_tracker.models import Aircraft, Position
+from flight_tracker.motion import AircraftMotionTracker
 from flight_tracker.motion.prediction import predict_position
-from flight_tracker.motion.tracker import AircraftMotionTracker
 
 
 OBSERVED_AT = datetime.fromtimestamp(1_725_000_000, tz=timezone.utc)
@@ -58,12 +58,16 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             track_degrees=0,
             position_observed_at=OBSERVED_AT - timedelta(seconds=5),
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(aircraft), received_at=100)
 
         current = tracker.current_aircraft(105)[0]
 
-        self.assertAlmostEqual(current.position.latitude, 1 / 360, places=5)  # type: ignore[union-attr]
+        self.assertEqual(current.position, aircraft.position)
+        self.assertAlmostEqual(current.estimated_position.latitude, 1 / 360, places=5)  # type: ignore[union-attr]
+        potential_radius = current.potential_radius_nm
+        assert potential_radius is not None
+        self.assertAlmostEqual(potential_radius, 60 / 360, places=5)
 
     def test_predicts_a_new_position_on_later_frames(self) -> None:
         aircraft = Aircraft(
@@ -73,12 +77,13 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             track_degrees=90,
             position_observed_at=OBSERVED_AT,
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(aircraft), received_at=100)
 
         current = tracker.current_aircraft(101)[0]
 
-        self.assertAlmostEqual(current.position.longitude, 1 / 3600, places=5)  # type: ignore[union-attr]
+        self.assertEqual(current.position, aircraft.position)
+        self.assertAlmostEqual(current.estimated_position.longitude, 1 / 3600, places=5)  # type: ignore[union-attr]
 
     def test_new_observation_replaces_previous_prediction(self) -> None:
         first = Aircraft(
@@ -95,13 +100,16 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             track_degrees=0,
             position_observed_at=OBSERVED_AT,
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(first), received_at=100)
         tracker.update(snapshot(second), received_at=110)
 
         current = tracker.current_aircraft(110)[0]
 
+        self.assertEqual(current.aircraft, second)
         self.assertEqual(current.position, Position(10, 10))
+        self.assertEqual(current.estimated_position, Position(10, 10))
+        self.assertEqual(current.potential_radius_nm, 0)
 
     def test_missing_motion_fields_keep_observed_position_fixed(self) -> None:
         for aircraft in (
@@ -124,10 +132,16 @@ class AircraftMotionTrackerTests(unittest.TestCase):
                 track_degrees=90,
             ),
         ):
-            tracker = AircraftMotionTracker(max_prediction_seconds=20)
+            tracker = AircraftMotionTracker(20, 60)
             tracker.update(snapshot(aircraft), received_at=100)
 
-            self.assertEqual(tracker.current_aircraft(110)[0].position, aircraft.position)
+            current = tracker.current_aircraft(110)[0]
+            self.assertEqual(current.position, aircraft.position)
+            if aircraft.ground_speed_knots is None or aircraft.position_observed_at is None:
+                self.assertIsNone(current.potential_radius_nm)
+            else:
+                self.assertIsNone(current.estimated_position)
+                self.assertEqual(current.potential_radius_nm, 60 / 360)
 
     def test_aircraft_missing_from_one_snapshot_becomes_stale(self) -> None:
         aircraft = Aircraft(
@@ -135,12 +149,12 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             position=Position(0, 0),
             position_observed_at=OBSERVED_AT,
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(aircraft), received_at=100)
         tracker.update(snapshot(), received_at=110)
 
-        self.assertEqual(len(tracker.current_aircraft(119)), 1)
-        current = tracker.current_aircraft(121)[0]
+        self.assertFalse(tracker.current_aircraft(120)[0].is_stale)
+        current = tracker.current_aircraft(120.1)[0]
         self.assertTrue(current.is_stale)
         self.assertEqual(current.position, aircraft.position)
 
@@ -152,13 +166,50 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             track_degrees=90,
             position_observed_at=OBSERVED_AT,
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(aircraft), received_at=100)
 
         current = tracker.current_aircraft(121)[0]
 
         self.assertTrue(current.is_stale)
-        self.assertGreater(current.position.longitude, aircraft.position.longitude)  # type: ignore[union-attr]
+        self.assertEqual(current.position, aircraft.position)
+        self.assertGreater(current.estimated_position.longitude, aircraft.position.longitude)  # type: ignore[union-attr]
+
+    def test_removes_track_only_after_removal_limit(self) -> None:
+        aircraft = Aircraft(
+            icao_hex="abc123",
+            position=Position(0, 0),
+            position_observed_at=OBSERVED_AT,
+        )
+        tracker = AircraftMotionTracker(20, 60)
+        tracker.update(snapshot(aircraft), received_at=100)
+
+        self.assertEqual(len(tracker.current_aircraft(160)), 1)
+        self.assertEqual(tracker.current_aircraft(160.1), ())
+        self.assertEqual(tracker.current_aircraft(161), ())
+
+    def test_positionless_observation_does_not_replace_valid_track(self) -> None:
+        aircraft = Aircraft(
+            icao_hex="abc123",
+            position=Position(0, 0),
+            position_observed_at=OBSERVED_AT,
+        )
+        positionless = Aircraft(icao_hex="abc123")
+        tracker = AircraftMotionTracker(20, 60)
+        tracker.update(snapshot(aircraft), received_at=100)
+        tracker.update(
+            NearbySnapshot(
+                QUERY,
+                (positionless,),
+                OBSERVED_AT + timedelta(seconds=10),
+            ),
+            received_at=110,
+        )
+
+        current = tracker.current_aircraft(120.1)[0]
+        self.assertEqual(current.position, aircraft.position)
+        self.assertTrue(current.is_stale)
+        self.assertEqual(tracker.current_aircraft(160.1), ())
 
     def test_two_aircraft_keep_independent_state(self) -> None:
         north = Aircraft(
@@ -175,13 +226,13 @@ class AircraftMotionTrackerTests(unittest.TestCase):
             track_degrees=90,
             position_observed_at=OBSERVED_AT,
         )
-        tracker = AircraftMotionTracker(max_prediction_seconds=20)
+        tracker = AircraftMotionTracker(20, 60)
         tracker.update(snapshot(north, east), received_at=100)
 
         current = tracker.current_aircraft(101)
 
-        self.assertAlmostEqual(current[0].position.latitude, 1 / 3600, places=5)  # type: ignore[union-attr]
-        self.assertAlmostEqual(current[1].position.longitude, 1 / 3600, places=5)  # type: ignore[union-attr]
+        self.assertAlmostEqual(current[0].estimated_position.latitude, 1 / 3600, places=5)  # type: ignore[union-attr]
+        self.assertAlmostEqual(current[1].estimated_position.longitude, 1 / 3600, places=5)  # type: ignore[union-attr]
 
 
 if __name__ == "__main__":

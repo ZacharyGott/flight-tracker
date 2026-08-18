@@ -2,7 +2,8 @@
 
 from typing import Protocol, Sequence
 
-from flight_tracker.models import Aircraft, Position
+from flight_tracker.models import Position
+from flight_tracker.motion import TrackedAircraft
 
 
 class RadarDisplay(Protocol):
@@ -15,7 +16,7 @@ class RadarDisplay(Protocol):
     def render(
         self,
         center: Position,
-        aircraft: Sequence[Aircraft],
+        aircraft: Sequence[TrackedAircraft],
         search_radius_nm: int,
     ) -> None:
         """Render one radar frame."""

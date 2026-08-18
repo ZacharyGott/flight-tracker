@@ -56,7 +56,8 @@ class TrackerApplication:
         try:
             self._flight_data_poller.start(query)
             motion_tracker = AircraftMotionTracker(
-                max_prediction_seconds=self._settings.refresh_seconds * 2,
+                stale_after_seconds=self._settings.stale_after_seconds,
+                remove_after_seconds=self._settings.remove_after_seconds,
             )
             while self._display.process_events():
                 now = self._clock()

@@ -10,10 +10,15 @@ from math import cos, radians
 from flight_tracker.app import TrackerApplication
 from flight_tracker.configuration import TrackerSettings, parse_settings
 from flight_tracker.display.pygame_display import calculate_radar_radius
-from flight_tracker.display.projection import RadarPoint, project_position
+from flight_tracker.display.projection import (
+    RadarPoint,
+    clip_segment_to_unit_circle,
+    project_position,
+)
 from flight_tracker.flight_data import NearbyQuery, NearbySnapshot, PollResult
 from flight_tracker.location import ConfiguredLocationProvider
 from flight_tracker.models import Aircraft, Position
+from flight_tracker.motion import TrackedAircraft
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -42,6 +47,10 @@ class ConfigurationTests(unittest.TestCase):
                 "600",
                 "--frame-rate",
                 "20",
+                "--stale-after-seconds",
+                "15",
+                "--remove-after-seconds",
+                "45",
             ]
         )
 
@@ -52,6 +61,8 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(settings.api_timeout_seconds, 1.5)
         self.assertEqual(settings.window_size, 600)
         self.assertEqual(settings.frame_rate, 20)
+        self.assertEqual(settings.stale_after_seconds, 15)
+        self.assertEqual(settings.remove_after_seconds, 45)
 
 
 class LocationProviderTests(unittest.TestCase):
@@ -95,6 +106,13 @@ class ProjectionTests(unittest.TestCase):
     def test_returns_none_outside_radar_circle(self) -> None:
         self.assertIsNone(project_position(self.center, Position(42.0, -70.0), 60))
 
+    def test_clips_line_at_radar_boundary(self) -> None:
+        segment = clip_segment_to_unit_circle(
+            RadarPoint(east=0, north=0), RadarPoint(east=2, north=0)
+        )
+
+        self.assertEqual(segment, (RadarPoint(east=0, north=0), RadarPoint(east=1, north=0)))
+
 
 class DisplayBoundsTests(unittest.TestCase):
     def test_800_pixel_radar_stays_inside_window(self) -> None:
@@ -136,7 +154,7 @@ class FakeLocationProvider:
 class FakeDisplay:
     def __init__(self, frames: int) -> None:
         self.frames = frames
-        self.rendered: list[tuple[Position, tuple[Aircraft, ...], int]] = []
+        self.rendered: list[tuple[Position, tuple[TrackedAircraft, ...], int]] = []
         self.frame_rates: list[int] = []
         self.closed = False
 
@@ -149,7 +167,7 @@ class FakeDisplay:
     def render(
         self,
         center: Position,
-        aircraft: Sequence[Aircraft],
+        aircraft: Sequence[TrackedAircraft],
         search_radius_nm: int,
     ) -> None:
         self.rendered.append((center, tuple(aircraft), search_radius_nm))
@@ -226,7 +244,7 @@ class TrackerApplicationTests(unittest.TestCase):
             clock=lambda: 0.0,
         ).run()
 
-        self.assertEqual(display.rendered[0][1], aircraft)
+        self.assertEqual(display.rendered[0][1][0].aircraft, aircraft[0])
 
     def test_prints_poll_error_and_keeps_rendering(self) -> None:
         flight_data = FakeSnapshotPoller(

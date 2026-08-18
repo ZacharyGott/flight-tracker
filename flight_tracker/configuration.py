@@ -18,6 +18,8 @@ class TrackerSettings:
     api_timeout_seconds: float = 5.0
     window_size: int = 800
     frame_rate: int = 30
+    stale_after_seconds: float = 20.0
+    remove_after_seconds: float = 60.0
 
 
 def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
@@ -32,6 +34,8 @@ def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
     parser.add_argument("--api-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--window-size", type=int, default=800)
     parser.add_argument("--frame-rate", type=int, default=30)
+    parser.add_argument("--stale-after-seconds", type=float, default=20.0)
+    parser.add_argument("--remove-after-seconds", type=float, default=60.0)
     values = parser.parse_args(arguments)
     return TrackerSettings(
         position=Position(values.latitude, values.longitude),
@@ -41,4 +45,6 @@ def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
         api_timeout_seconds=values.api_timeout_seconds,
         window_size=values.window_size,
         frame_rate=values.frame_rate,
+        stale_after_seconds=values.stale_after_seconds,
+        remove_after_seconds=values.remove_after_seconds,
     )

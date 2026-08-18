@@ -31,4 +31,3 @@ class Aircraft:
     track_degrees: float | None = None
     ground_speed_knots: float | None = None
     position_observed_at: datetime | None = None
-    is_stale: bool = False
