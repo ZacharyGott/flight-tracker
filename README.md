@@ -13,16 +13,20 @@ python -m pip install -e ".[dev]"
 python3 radar.py
 ```
 
-Each aircraft shows a 5 pixel dot at its last observed position. When the
-provider supplies position time, ground speed, and ground track, the display
-draws a thin line to the estimated current position and a smaller endpoint
-marker. A translucent circle shows the area reached at the last reported speed
-since the observation. The circle is clipped to the radar boundary.
+Each aircraft shows a small top-view aircraft sprite at its last observed
+position. The sprite points in the reported ground-track direction. If the
+provider does not supply a ground track, the display uses a 5 pixel dot. When
+the provider supplies position time, ground speed, and ground track, the
+display draws a thin line to the estimated current position and a smaller
+endpoint marker. A translucent circle shows the area reached at the last
+reported speed since the observation. The circle is clipped to the radar
+boundary.
 
-If the provider does not supply ground speed, the display shows only the
-observed dot. If it does not supply track, it shows the potential area without
-the line or endpoint. If it does not supply position time, it shows only the
-observed dot.
+If the provider does not supply ground speed, the display shows the sprite
+without the estimated path or potential area. If it does not supply track, the
+display uses the dot fallback and shows the potential area without the line or
+endpoint. If it does not supply position time, the display shows the sprite or
+dot without motion estimates.
 
 Aircraft become grey when the observation age is greater than 20 seconds. The
 tracker removes an aircraft when the age is greater than 60 seconds. Both

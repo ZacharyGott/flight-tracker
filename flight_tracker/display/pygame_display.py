@@ -1,6 +1,7 @@
 """Pygame implementation of the radar display."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import pygame
 
@@ -20,8 +21,10 @@ GREEN = (0, 255, 0)
 LIGHT_GREY = (180, 180, 180)
 EDGE_MARGIN = 20
 AIRCRAFT_RADIUS = 5
+AIRCRAFT_SPRITE_SIZE = 20
 ESTIMATE_RADIUS = 2
 POTENTIAL_ALPHA = 40
+AIRCRAFT_ASSET_PATH = Path(__file__).with_name("assets") / "aircraft.svg"
 
 
 def calculate_radar_radius(
@@ -43,6 +46,19 @@ class PygameRadarDisplay:
         self._window_size = (window_size, window_size)
         self._aircraft_layer = pygame.Surface(self._window_size, pygame.SRCALPHA)
         self._radar_mask = pygame.Surface(self._window_size, pygame.SRCALPHA)
+        aircraft_image = pygame.image.load(AIRCRAFT_ASSET_PATH).convert_alpha()
+        aircraft_image = pygame.transform.smoothscale(
+            aircraft_image, (AIRCRAFT_SPRITE_SIZE, AIRCRAFT_SPRITE_SIZE)
+        )
+        aircraft_mask = pygame.mask.from_surface(aircraft_image)
+        self._aircraft_sprites = {
+            GREEN: aircraft_mask.to_surface(
+                setcolor=(*GREEN, 255), unsetcolor=(0, 0, 0, 0)
+            ).convert_alpha(),
+            LIGHT_GREY: aircraft_mask.to_surface(
+                setcolor=(*LIGHT_GREY, 255), unsetcolor=(0, 0, 0, 0)
+            ).convert_alpha(),
+        }
 
     def process_events(self) -> bool:
         """Process close and Escape events."""
@@ -139,12 +155,23 @@ class PygameRadarDisplay:
 
         for item, observed_point in visible_aircraft:
             color = LIGHT_GREY if item.is_stale else GREEN
-            pygame.draw.circle(
-                self._aircraft_layer,
-                color,
-                self._pixel_position(observed_point, pixel_center, radar_radius),
-                AIRCRAFT_RADIUS,
+            pixel_position = self._pixel_position(
+                observed_point, pixel_center, radar_radius
             )
+            track_degrees = item.aircraft.track_degrees
+            if track_degrees is None:
+                pygame.draw.circle(
+                    self._aircraft_layer,
+                    color,
+                    pixel_position,
+                    AIRCRAFT_RADIUS,
+                )
+                continue
+            # The source sprite points north. Pygame needs a negative screen angle.
+            sprite = pygame.transform.rotate(
+                self._aircraft_sprites[color], -track_degrees
+            )
+            self._aircraft_layer.blit(sprite, sprite.get_rect(center=pixel_position))
 
         self._blit_clipped_aircraft_layer(pixel_center, radar_radius)
 
