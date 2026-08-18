@@ -4,6 +4,11 @@
 
 This project displays nearby aircraft on a radar-style circular display.
 
+The display also shows nearby runway segments. The packaged SQLite database
+stores the runway coordinates and an RTree spatial index. The application
+loads these runways once at startup. It does not read the source CSV at
+runtime.
+
 ## Setup
 
 ```bash
@@ -69,6 +74,12 @@ You can set the center and radius with command-line options:
 python3 radar.py --latitude 40 --longitude -70 --radius 50
 ```
 
+Set a different read-only runway database with this option:
+
+```bash
+python3 radar.py --runway-database /path/to/runways.sqlite3
+```
+
 Set the age limits with these options:
 
 ```bash
@@ -83,3 +94,6 @@ python3 radar.py --stale-after-seconds 20 --remove-after-seconds 60
 - adsb.lol can return no aircraft for a valid request.
 - Aircraft classification is best effort. The application does not use an
   airline or aircraft database.
+- Runway search uses a latitude and longitude bounding box. The display checks
+  the exact circular boundary after projection.
+- The runway projection does not support polar regions or date-line crossing.

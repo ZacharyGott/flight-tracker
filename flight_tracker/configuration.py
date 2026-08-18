@@ -2,6 +2,7 @@
 
 import argparse
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Sequence
 
 from flight_tracker.models import Position
@@ -20,6 +21,10 @@ class TrackerSettings:
     frame_rate: int = 30
     stale_after_seconds: float = 20.0
     remove_after_seconds: float = 60.0
+    runway_database: Path = field(
+        default_factory=lambda: Path(__file__).with_name("runway_data")
+        / "runways.sqlite3"
+    )
 
 
 def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
@@ -36,6 +41,11 @@ def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
     parser.add_argument("--frame-rate", type=int, default=30)
     parser.add_argument("--stale-after-seconds", type=float, default=20.0)
     parser.add_argument("--remove-after-seconds", type=float, default=60.0)
+    parser.add_argument(
+        "--runway-database",
+        type=Path,
+        default=Path(__file__).with_name("runway_data") / "runways.sqlite3",
+    )
     values = parser.parse_args(arguments)
     return TrackerSettings(
         position=Position(values.latitude, values.longitude),
@@ -47,4 +57,5 @@ def parse_settings(arguments: Sequence[str] | None = None) -> TrackerSettings:
         frame_rate=values.frame_rate,
         stale_after_seconds=values.stale_after_seconds,
         remove_after_seconds=values.remove_after_seconds,
+        runway_database=values.runway_database,
     )

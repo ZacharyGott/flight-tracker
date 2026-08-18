@@ -5,6 +5,7 @@ from flight_tracker.configuration import parse_settings
 from flight_tracker.display.pygame_display import PygameRadarDisplay
 from flight_tracker.flight_data import AdsbLolClient, RequestsTransport, SnapshotPoller
 from flight_tracker.location import ConfiguredLocationProvider
+from flight_tracker.runway_data.sqlite_repository import SqliteRunwayRepository
 
 
 def main() -> None:
@@ -22,11 +23,13 @@ def main() -> None:
         refresh_seconds=settings.refresh_seconds,
     )
     display = PygameRadarDisplay(window_size=settings.window_size)
+    runway_repository = SqliteRunwayRepository(settings.runway_database)
     TrackerApplication(
         flight_data_poller=flight_data_poller,
         location_provider=location_provider,
         display=display,
         settings=settings,
+        runway_repository=runway_repository,
     ).run()
 
 

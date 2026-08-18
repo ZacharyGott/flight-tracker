@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from math import cos, radians
+from pathlib import Path
 
 from flight_tracker.app import TrackerApplication
 from flight_tracker.configuration import TrackerSettings, parse_settings
@@ -30,6 +31,7 @@ from flight_tracker.flight_data import NearbyQuery, NearbySnapshot, PollResult
 from flight_tracker.location import ConfiguredLocationProvider
 from flight_tracker.models import Aircraft, AircraftClassification, Position
 from flight_tracker.motion import TrackedAircraft
+from flight_tracker.runway_data import RunwaySegment
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -62,6 +64,8 @@ class ConfigurationTests(unittest.TestCase):
                 "15",
                 "--remove-after-seconds",
                 "45",
+                "--runway-database",
+                "/tmp/test-runways.sqlite3",
             ]
         )
 
@@ -74,6 +78,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(settings.frame_rate, 20)
         self.assertEqual(settings.stale_after_seconds, 15)
         self.assertEqual(settings.remove_after_seconds, 45)
+        self.assertEqual(settings.runway_database, Path("/tmp/test-runways.sqlite3"))
 
 
 class LocationProviderTests(unittest.TestCase):
@@ -259,7 +264,14 @@ class FakeLocationProvider:
 class FakeDisplay:
     def __init__(self, frames: int) -> None:
         self.frames = frames
-        self.rendered: list[tuple[Position, tuple[TrackedAircraft, ...], int]] = []
+        self.rendered: list[
+            tuple[
+                Position,
+                tuple[TrackedAircraft, ...],
+                tuple[RunwaySegment, ...],
+                int,
+            ]
+        ] = []
         self.frame_rates: list[int] = []
         self.closed = False
 
@@ -273,15 +285,30 @@ class FakeDisplay:
         self,
         center: Position,
         aircraft: Sequence[TrackedAircraft],
+        runways: Sequence[RunwaySegment],
         search_radius_nm: int,
     ) -> None:
-        self.rendered.append((center, tuple(aircraft), search_radius_nm))
+        self.rendered.append(
+            (center, tuple(aircraft), tuple(runways), search_radius_nm)
+        )
 
     def limit_frame_rate(self, frame_rate: int) -> None:
         self.frame_rates.append(frame_rate)
 
     def close(self) -> None:
         self.closed = True
+
+
+class FakeRunwayRepository:
+    def __init__(self, runways: tuple[RunwaySegment, ...] = ()) -> None:
+        self.runways = runways
+        self.calls: list[tuple[Position, int | float]] = []
+
+    def get_nearby_runways(
+        self, center: Position, radius_nm: int | float
+    ) -> tuple[RunwaySegment, ...]:
+        self.calls.append((center, radius_nm))
+        return self.runways
 
 
 class TrackerApplicationTests(unittest.TestCase):
@@ -292,6 +319,7 @@ class TrackerApplicationTests(unittest.TestCase):
         flight_data = FakeSnapshotPoller()
         location = FakeLocationProvider(position)
         display = FakeDisplay(frames=1)
+        runway_repository = FakeRunwayRepository()
         settings = TrackerSettings(
             position=Position(40.0, -70.0),
             search_radius_nm=50,
@@ -304,6 +332,7 @@ class TrackerApplicationTests(unittest.TestCase):
             location_provider=location,
             display=display,
             settings=settings,
+            runway_repository=runway_repository,
             clock=lambda: 0.0,
         ).run()
 
@@ -317,12 +346,14 @@ class TrackerApplicationTests(unittest.TestCase):
         settings = TrackerSettings()
         flight_data = FakeSnapshotPoller()
         display = FakeDisplay(frames=1)
+        runway_repository = FakeRunwayRepository()
 
         TrackerApplication(
             flight_data_poller=flight_data,
             location_provider=FakeLocationProvider(settings.position),
             display=display,
             settings=settings,
+            runway_repository=runway_repository,
             clock=lambda: 0.0,
         ).run()
 
@@ -340,12 +371,14 @@ class TrackerApplicationTests(unittest.TestCase):
         )
         display = FakeDisplay(frames=1)
         settings = TrackerSettings()
+        runway_repository = FakeRunwayRepository()
 
         TrackerApplication(
             flight_data_poller=flight_data,
             location_provider=FakeLocationProvider(settings.position),
             display=display,
             settings=settings,
+            runway_repository=runway_repository,
             clock=lambda: 0.0,
         ).run()
 
@@ -357,6 +390,7 @@ class TrackerApplicationTests(unittest.TestCase):
         )
         display = FakeDisplay(frames=1)
         settings = TrackerSettings()
+        runway_repository = FakeRunwayRepository()
 
         output = io.StringIO()
         with redirect_stdout(output):
@@ -365,6 +399,7 @@ class TrackerApplicationTests(unittest.TestCase):
                 location_provider=FakeLocationProvider(settings.position),
                 display=display,
                 settings=settings,
+                runway_repository=runway_repository,
                 clock=lambda: 0.0,
             ).run()
 
@@ -372,6 +407,25 @@ class TrackerApplicationTests(unittest.TestCase):
         self.assertIn("flight-data refresh failed: offline", output.getvalue())
         self.assertTrue(display.closed)
         self.assertTrue(flight_data.stopped)
+
+    def test_queries_runways_once_and_reuses_tuple_for_each_frame(self) -> None:
+        runways = (RunwaySegment(Position(40, -70), Position(40.1, -70)),)
+        runway_repository = FakeRunwayRepository(runways)
+        display = FakeDisplay(frames=2)
+        settings = TrackerSettings()
+
+        TrackerApplication(
+            flight_data_poller=FakeSnapshotPoller(),
+            location_provider=FakeLocationProvider(settings.position),
+            display=display,
+            settings=settings,
+            runway_repository=runway_repository,
+            clock=lambda: 0.0,
+        ).run()
+
+        self.assertEqual(len(runway_repository.calls), 1)
+        self.assertEqual(display.rendered[0][2], runways)
+        self.assertIs(display.rendered[0][2], display.rendered[1][2])
 
 
 if __name__ == "__main__":

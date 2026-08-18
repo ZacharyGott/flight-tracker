@@ -22,4 +22,4 @@ dev = [
 include = ["flight_tracker*"]
 
 [tool.setuptools.package-data]
-flight_tracker = ["display/assets/*.svg"]
+flight_tracker = ["display/assets/*.svg", "runway_data/*.sqlite3"]

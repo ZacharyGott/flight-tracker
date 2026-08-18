@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 
 from flight_tracker.models import Position
+from flight_tracker.runway_data import RunwaySegment
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,3 +85,15 @@ def clip_segment_to_unit_circle(
             north=start.north + delta_north * upper,
         ),
     )
+
+
+def project_runway_segment(
+    center: Position,
+    runway: RunwaySegment,
+    search_radius_nm: int | float,
+) -> tuple[RadarPoint, RadarPoint] | None:
+    """Project and clip a runway segment to the radar circle."""
+
+    start = project_position_unclipped(center, runway.low, search_radius_nm)
+    end = project_position_unclipped(center, runway.high, search_radius_nm)
+    return clip_segment_to_unit_circle(start, end)

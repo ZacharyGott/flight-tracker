@@ -7,12 +7,14 @@ import pygame
 
 from flight_tracker.models import Position
 from flight_tracker.motion import TrackedAircraft
+from flight_tracker.runway_data import RunwaySegment
 
 from .projection import (
     RadarPoint,
     clip_segment_to_unit_circle,
     project_position,
     project_position_unclipped,
+    project_runway_segment,
 )
 from .sprites import AircraftSprite, select_aircraft_sprite
 from .aircraft_card import (
@@ -25,6 +27,7 @@ from .aircraft_card import (
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
 DARK_GREEN = (0, 128, 0)
+RUNWAY_GREEN = DARK_GREEN
 LIGHT_GREY = (180, 180, 180)
 DARK_GREY = (90, 90, 90)
 EDGE_MARGIN = 20
@@ -91,6 +94,7 @@ class PygameRadarDisplay:
         self,
         center: Position,
         aircraft: Sequence[TrackedAircraft],
+        runways: Sequence[RunwaySegment],
         search_radius_nm: int,
     ) -> None:
         """Draw one radar frame."""
@@ -121,6 +125,9 @@ class PygameRadarDisplay:
             (pixel_center[0], pixel_center[1] - radar_radius),
             (pixel_center[0], pixel_center[1] + radar_radius),
             width=1,
+        )
+        self._draw_runways(
+            center, runways, search_radius_nm, pixel_center, radar_radius
         )
         pygame.draw.circle(self._screen, GREEN, pixel_center, AIRCRAFT_RADIUS)
 
@@ -220,6 +227,28 @@ class PygameRadarDisplay:
             )
 
         pygame.display.flip()
+
+    def _draw_runways(
+        self,
+        center: Position,
+        runways: Sequence[RunwaySegment],
+        search_radius_nm: int,
+        pixel_center: tuple[int, int],
+        radar_radius: int,
+    ) -> None:
+        """Draw runway segments clipped to the radar boundary."""
+
+        for runway in runways:
+            segment = project_runway_segment(center, runway, search_radius_nm)
+            if segment is None:
+                continue
+            pygame.draw.line(
+                self._screen,
+                RUNWAY_GREEN,
+                self._pixel_position(segment[0], pixel_center, radar_radius),
+                self._pixel_position(segment[1], pixel_center, radar_radius),
+                width=1,
+            )
 
     def _draw_aircraft_card(
         self,
