@@ -15,6 +15,12 @@ from flight_tracker.display.pygame_display import (
     calculate_radar_radius,
     prediction_color,
 )
+from flight_tracker.display.aircraft_card import (
+    aircraft_card_lines,
+    card_rect_near_aircraft,
+    knots_to_mph,
+    nearest_marker,
+)
 from flight_tracker.display.projection import (
     RadarPoint,
     clip_segment_to_unit_circle,
@@ -22,7 +28,7 @@ from flight_tracker.display.projection import (
 )
 from flight_tracker.flight_data import NearbyQuery, NearbySnapshot, PollResult
 from flight_tracker.location import ConfiguredLocationProvider
-from flight_tracker.models import Aircraft, Position
+from flight_tracker.models import Aircraft, AircraftClassification, Position
 from flight_tracker.motion import TrackedAircraft
 
 
@@ -135,6 +141,92 @@ class PredictionDisplayColorTests(unittest.TestCase):
     def test_stale_prediction_uses_dark_grey(self) -> None:
         self.assertEqual(prediction_color(True), DARK_GREY)
 
+
+class AircraftCardTests(unittest.TestCase):
+    def test_formats_aircraft_details_and_converts_speed(self) -> None:
+        aircraft = Aircraft(
+            icao_hex="abc123",
+            callsign="AAL2741",
+            classification=AircraftClassification.COMMERCIAL,
+            aircraft_type="B738",
+            registration="N123AA",
+            altitude_feet=35000,
+            ground_speed_knots=420,
+            track_degrees=271,
+        )
+
+        self.assertEqual(
+            aircraft_card_lines(aircraft),
+            (
+                "AAL2741",
+                "Commercial · B738",
+                "Registration: N123AA",
+                "Altitude: 35,000 ft",
+                "Ground speed: 420 kt · 483 mph",
+                "Track: 271°",
+                "ICAO: ABC123",
+            ),
+        )
+        self.assertEqual(knots_to_mph(420), 483)
+
+    def test_uses_unknown_for_missing_values(self) -> None:
+        self.assertEqual(
+            aircraft_card_lines(Aircraft(icao_hex="")),
+            (
+                "Unknown",
+                "Unknown · Unknown",
+                "Registration: Unknown",
+                "Altitude: Unknown",
+                "Ground speed: Unknown",
+                "Track: Unknown",
+                "ICAO: Unknown",
+            ),
+        )
+
+    def test_uses_registration_when_callsign_is_missing(self) -> None:
+        lines = aircraft_card_lines(
+            Aircraft(icao_hex="abc123", registration=" N123AA ")
+        )
+
+        self.assertEqual(lines[0], "N123AA")
+
+    def test_uses_uppercase_icao_when_callsign_and_registration_are_missing(
+        self,
+    ) -> None:
+        lines = aircraft_card_lines(Aircraft(icao_hex="abc123"))
+
+        self.assertEqual(lines[0], "ABC123")
+
+    def test_nearest_marker_wins_for_overlapping_hit_areas(self) -> None:
+        self.assertEqual(
+            nearest_marker(
+                (100, 100),
+                (("far", (108, 100)), ("near", (103, 100))),
+            ),
+            "near",
+        )
+        self.assertIsNone(nearest_marker((100, 100), (("aircraft", (120, 100)),)))
+
+    def test_card_rectangle_stays_inside_radar_circle(self) -> None:
+        for anchor in ((400, 20), (780, 400), (400, 780), (20, 400), (400, 400)):
+            rectangle = card_rect_near_aircraft(
+                anchor,
+                (160, 100),
+                (400, 400),
+                380,
+            )
+
+            x, y, width, height = rectangle
+            for corner_x, corner_y in (
+                (x, y),
+                (x + width, y),
+                (x, y + height),
+                (x + width, y + height),
+            ):
+                self.assertLessEqual(
+                    (corner_x - 400) ** 2 + (corner_y - 400) ** 2,
+                    380**2,
+                )
 
 class FakeSnapshotPoller:
     def __init__(self, results: list[PollResult] | None = None) -> None:

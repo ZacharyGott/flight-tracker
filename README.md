@@ -22,6 +22,14 @@ endpoint marker. A translucent circle shows the area reached at the last
 reported speed since the observation. The circle is clipped to the radar
 boundary.
 
+Click a visible aircraft marker to show its information card. The card shows
+the callsign, best-effort classification, provider aircraft type designator,
+registration, altitude, ground speed in knots and rounded miles per hour,
+ground track, and ICAO address. The card uses `Unknown` when a value is not
+available. Click empty radar space to clear the card. The card uses `Track`
+because the provider supplies ground track, not true heading. A selected
+stale aircraft uses the grey display style.
+
 The predicted-position endpoint uses dark green `(0, 128, 0)` for a current
 aircraft. It uses dark grey `(90, 90, 90)` for a stale aircraft. The observed
 aircraft keeps the bright green or light grey treatment.

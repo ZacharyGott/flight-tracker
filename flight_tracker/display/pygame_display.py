@@ -15,6 +15,11 @@ from .projection import (
     project_position_unclipped,
 )
 from .sprites import AircraftSprite, select_aircraft_sprite
+from .aircraft_card import (
+    aircraft_card_lines,
+    card_rect_near_aircraft,
+    nearest_marker,
+)
 
 
 BLACK = (0, 0, 0)
@@ -27,6 +32,10 @@ AIRCRAFT_RADIUS = 5
 AIRCRAFT_SPRITE_SIZE = 20
 ESTIMATE_RADIUS = 2
 POTENTIAL_ALPHA = 40
+CARD_PADDING = 8
+CARD_LINE_GAP = 2
+CARD_BORDER_WIDTH = 1
+SELECTION_RING_RADIUS = AIRCRAFT_RADIUS + 7
 AIRCRAFT_ASSET_DIRECTORY = Path(__file__).with_name("assets")
 
 
@@ -56,15 +65,26 @@ class PygameRadarDisplay:
         self._aircraft_layer = pygame.Surface(self._window_size, pygame.SRCALPHA)
         self._radar_mask = pygame.Surface(self._window_size, pygame.SRCALPHA)
         self._aircraft_sprites = self._load_aircraft_sprites()
+        self._card_font = pygame.font.Font(None, 18)
+        self._visible_aircraft: dict[
+            str, tuple[TrackedAircraft, tuple[int, int]]
+        ] = {}
+        self._selected_icao: str | None = None
 
     def process_events(self) -> bool:
-        """Process close and Escape events."""
+        """Process close, Escape, and aircraft selection events."""
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 return False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                markers = tuple(
+                    (icao_hex, pixel_position)
+                    for icao_hex, (_, pixel_position) in self._visible_aircraft.items()
+                )
+                self._selected_icao = nearest_marker(event.pos, markers)
         return True
 
     def render(
@@ -116,6 +136,14 @@ class PygameRadarDisplay:
             if observed_point is None:
                 continue
             visible_aircraft.append((item, observed_point))
+        self._visible_aircraft = {
+            item.aircraft.icao_hex.upper(): (
+                item,
+                self._pixel_position(observed_point, pixel_center, radar_radius),
+            )
+            for item, observed_point in visible_aircraft
+        }
+        selected = self._selected_aircraft()
 
         for item, observed_point in visible_aircraft:
             estimated = item.estimated_position
@@ -171,9 +199,80 @@ class PygameRadarDisplay:
                 ESTIMATE_RADIUS,
             )
 
+        if selected is not None:
+            selected_item, selected_position = selected
+            color = LIGHT_GREY if selected_item.is_stale else GREEN
+            pygame.draw.circle(
+                self._aircraft_layer,
+                color,
+                selected_position,
+                SELECTION_RING_RADIUS,
+                width=1,
+            )
+
         self._blit_clipped_aircraft_layer(pixel_center, radar_radius)
+        if selected is not None:
+            self._draw_aircraft_card(
+                selected[0],
+                selected[1],
+                pixel_center,
+                radar_radius,
+            )
 
         pygame.display.flip()
+
+    def _draw_aircraft_card(
+        self,
+        item: TrackedAircraft,
+        pixel_position: tuple[int, int],
+        pixel_center: tuple[int, int],
+        radar_radius: int,
+    ) -> None:
+        """Draw the selected aircraft information card."""
+
+        lines = aircraft_card_lines(item.aircraft)
+        line_height = self._card_font.get_linesize()
+        card_width = max(
+            self._card_font.size(line)[0] for line in lines
+        ) + CARD_PADDING * 2
+        card_height = (
+            line_height * len(lines)
+            + CARD_PADDING * 2
+            + CARD_LINE_GAP * (len(lines) - 1)
+        )
+        card_rect = card_rect_near_aircraft(
+            pixel_position,
+            (card_width, card_height),
+            pixel_center,
+            radar_radius,
+        )
+        card_surface = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+        card_surface.fill((*BLACK, 255))
+        color = LIGHT_GREY if item.is_stale else GREEN
+        pygame.draw.rect(
+            card_surface,
+            color,
+            card_surface.get_rect(),
+            width=CARD_BORDER_WIDTH,
+        )
+        y = CARD_PADDING
+        for line in lines:
+            text_surface = self._card_font.render(line, True, color)
+            card_surface.blit(text_surface, (CARD_PADDING, y))
+            y += line_height + CARD_LINE_GAP
+        self._screen.blit(card_surface, card_rect[:2])
+
+    def _selected_aircraft(
+        self,
+    ) -> tuple[TrackedAircraft, tuple[int, int]] | None:
+        """Return the selected aircraft in the current visible frame."""
+
+        if self._selected_icao is None:
+            return None
+        selected = self._visible_aircraft.get(self._selected_icao)
+        if selected is None:
+            self._selected_icao = None
+        return selected
 
     def _draw_potential_areas(
         self,
