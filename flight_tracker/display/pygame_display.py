@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pygame
 
-from flight_tracker.models import Position
+from flight_tracker.models import AircraftClassification, Position
 from flight_tracker.motion import TrackedAircraft
 from flight_tracker.runway_data import RunwaySegment
 
@@ -23,6 +23,10 @@ from .aircraft_card import (
     nearest_marker,
 )
 from .aircraft_stats import AircraftStats, aircraft_stats_lines, summarize_aircraft
+from .aircraft_filter import (
+    AIRCRAFT_FILTER_CATEGORIES,
+    filter_aircraft,
+)
 
 
 BLACK = (0, 0, 0)
@@ -47,6 +51,33 @@ STATS_FONT_SIZE = 14
 STATS_TOP = 8
 STATS_LINE_GAP = 1
 AIRCRAFT_ASSET_DIRECTORY = Path(__file__).with_name("assets")
+AIRCRAFT_FILTER_LABELS = (
+    "Commercial",
+    "Private",
+    "General aviation",
+    "Military",
+    "Unknown",
+)
+FILTER_LEFT = 8
+FILTER_TOP = 8
+FILTER_ROW_WIDTH = 160
+FILTER_ROW_HEIGHT = 18
+FILTER_BOX_SIZE = 12
+FILTER_TEXT_GAP = 6
+
+
+def checkbox_row_rectangles() -> tuple[pygame.Rect, ...]:
+    """Return the five checkbox row rectangles for the square display."""
+
+    return tuple(
+        pygame.Rect(
+            FILTER_LEFT,
+            FILTER_TOP + index * FILTER_ROW_HEIGHT,
+            FILTER_ROW_WIDTH,
+            FILTER_ROW_HEIGHT,
+        )
+        for index in range(len(AIRCRAFT_FILTER_CATEGORIES))
+    )
 
 
 def calculate_radar_radius(
@@ -123,10 +154,17 @@ class PygameRadarDisplay:
         self._aircraft_sprites = self._load_aircraft_sprites()
         self._card_font = pygame.font.Font(None, 18)
         self._stats_font = pygame.font.Font(None, STATS_FONT_SIZE)
+        self._enabled_classifications = set(AIRCRAFT_FILTER_CATEGORIES)
         self._visible_aircraft: dict[
             str, tuple[TrackedAircraft, tuple[int, int]]
         ] = {}
         self._selected_icao: str | None = None
+
+    @property
+    def enabled_classifications(self) -> frozenset[AircraftClassification]:
+        """Return the classifications shown by the display."""
+
+        return frozenset(self._enabled_classifications)
 
     def process_events(self) -> bool:
         """Process close, Escape, and aircraft selection events."""
@@ -137,6 +175,14 @@ class PygameRadarDisplay:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 return False
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                checkbox_index = self._checkbox_index_at(event.pos)
+                if checkbox_index is not None:
+                    classification = AIRCRAFT_FILTER_CATEGORIES[checkbox_index]
+                    if classification in self._enabled_classifications:
+                        self._enabled_classifications.remove(classification)
+                    else:
+                        self._enabled_classifications.add(classification)
+                    continue
                 markers = tuple(
                     (icao_hex, pixel_position)
                     for icao_hex, (_, pixel_position) in self._visible_aircraft.items()
@@ -180,16 +226,21 @@ class PygameRadarDisplay:
             (pixel_center[0], pixel_center[1] + radar_radius),
             width=1,
         )
+        filtered_aircraft = filter_aircraft(aircraft, self._enabled_classifications)
         self._draw_runways(
             center, runways, search_radius_nm, pixel_center, radar_radius
         )
         pygame.draw.circle(self._screen, GREEN, pixel_center, AIRCRAFT_RADIUS)
 
         self._draw_potential_areas(
-            center, aircraft, search_radius_nm, pixel_center, radar_radius
+            center,
+            filtered_aircraft,
+            search_radius_nm,
+            pixel_center,
+            radar_radius,
         )
         visible_aircraft: list[tuple[TrackedAircraft, RadarPoint]] = []
-        for item in aircraft:
+        for item in filtered_aircraft:
             observed = item.position
             if observed is None:
                 continue
@@ -285,6 +336,7 @@ class PygameRadarDisplay:
             )
 
         self._blit_clipped_aircraft_layer(pixel_center, radar_radius)
+        self._draw_aircraft_filters()
         self._draw_aircraft_stats(stats)
         if selected is not None:
             self._draw_aircraft_card(
@@ -314,6 +366,50 @@ class PygameRadarDisplay:
         )
         for surface, rectangle in zip(surfaces, rectangles, strict=True):
             self._screen.blit(surface, rectangle[:2])
+
+    def _draw_aircraft_filters(self) -> None:
+        """Draw the aircraft classification checkboxes."""
+
+        for category, label, row in zip(
+            AIRCRAFT_FILTER_CATEGORIES,
+            AIRCRAFT_FILTER_LABELS,
+            checkbox_row_rectangles(),
+            strict=True,
+        ):
+            box = pygame.Rect(
+                row.left,
+                row.top + (row.height - FILTER_BOX_SIZE) // 2,
+                FILTER_BOX_SIZE,
+                FILTER_BOX_SIZE,
+            )
+            pygame.draw.rect(self._screen, GREEN, box, width=1)
+            if category in self._enabled_classifications:
+                pygame.draw.line(
+                    self._screen,
+                    GREEN,
+                    (box.left + 2, box.centery),
+                    (box.left + 5, box.bottom - 3),
+                    width=1,
+                )
+                pygame.draw.line(
+                    self._screen,
+                    GREEN,
+                    (box.left + 5, box.bottom - 3),
+                    (box.right - 2, box.top + 3),
+                    width=1,
+                )
+            text = self._stats_font.render(label, True, GREEN)
+            text_y = row.top + (row.height - text.get_height()) // 2
+            self._screen.blit(text, (box.right + FILTER_TEXT_GAP, text_y))
+
+    @staticmethod
+    def _checkbox_index_at(position: tuple[int, int]) -> int | None:
+        """Return the checkbox row at one screen position."""
+
+        for index, row in enumerate(checkbox_row_rectangles()):
+            if row.collidepoint(position):
+                return index
+        return None
 
     def _draw_runways(
         self,

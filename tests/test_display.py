@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from math import cos, radians
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -23,13 +24,16 @@ from flight_tracker.display.pygame_display import (
     GREEN,
     LIGHT_GREY,
     STATS_FONT_SIZE,
+    PygameRadarDisplay,
     calculate_radar_radius,
+    checkbox_row_rectangles,
     has_dual_highlight_ring,
     marker_color,
     marker_draw_priority,
     prediction_color,
     statistics_text_rectangles,
 )
+from flight_tracker.display.aircraft_filter import AIRCRAFT_FILTER_CATEGORIES
 from flight_tracker.display.aircraft_stats import summarize_aircraft
 from flight_tracker.display.aircraft_card import (
     aircraft_card_lines,
@@ -333,6 +337,140 @@ class AircraftCardTests(unittest.TestCase):
                     (corner_x - 400) ** 2 + (corner_y - 400) ** 2,
                     380**2,
                 )
+
+
+class AircraftFilterDisplayTests(unittest.TestCase):
+    @staticmethod
+    def tracked(
+        icao_hex: str,
+        classification: AircraftClassification,
+        position: Position | None = None,
+    ) -> TrackedAircraft:
+        return TrackedAircraft(
+            aircraft=Aircraft(
+                icao_hex=icao_hex,
+                classification=classification,
+                position=position,
+            ),
+            estimated_position=None,
+            potential_radius_nm=None,
+            is_stale=False,
+        )
+
+    def new_display(self) -> PygameRadarDisplay:
+        display = PygameRadarDisplay(window_size=800)
+        self.addCleanup(display.close)
+        pygame.event.clear()
+        return display
+
+    def test_all_five_classifications_are_enabled_at_startup(self) -> None:
+        display = self.new_display()
+
+        self.assertEqual(
+            display.enabled_classifications, frozenset(AIRCRAFT_FILTER_CATEGORIES)
+        )
+
+    def test_clicking_a_checkbox_changes_only_its_state(self) -> None:
+        display = self.new_display()
+        row = checkbox_row_rectangles()[0]
+        pygame.event.post(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": row.center},
+            )
+        )
+
+        self.assertTrue(display.process_events())
+
+        self.assertNotIn(
+            AircraftClassification.COMMERCIAL, display.enabled_classifications
+        )
+        self.assertEqual(
+            display.enabled_classifications,
+            frozenset(AIRCRAFT_FILTER_CATEGORIES)
+            - {AircraftClassification.COMMERCIAL},
+        )
+
+    def test_checkbox_click_does_not_select_an_aircraft(self) -> None:
+        display = self.new_display()
+        pygame.event.post(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": checkbox_row_rectangles()[0].center},
+            )
+        )
+
+        with patch("flight_tracker.display.pygame_display.nearest_marker") as nearest:
+            self.assertTrue(display.process_events())
+
+        nearest.assert_not_called()
+
+    def test_hidden_selected_aircraft_is_cleared(self) -> None:
+        display = self.new_display()
+        item = self.tracked(
+            "abc123",
+            AircraftClassification.COMMERCIAL,
+            Position(40.5, -70.0),
+        )
+        display.render(Position(40.0, -70.0), (item,), (), 100)
+        with patch(
+            "flight_tracker.display.pygame_display.nearest_marker",
+            return_value="ABC123",
+        ):
+            pygame.event.post(
+                pygame.event.Event(
+                    pygame.MOUSEBUTTONDOWN,
+                    {"button": 1, "pos": (400, 400)},
+                )
+            )
+            self.assertTrue(display.process_events())
+        self.click_checkbox(display, 0)
+
+        display.render(Position(40.0, -70.0), (item,), (), 100)
+
+        self.assertIsNone(getattr(display, "_selected_icao"))
+
+    def test_hidden_aircraft_does_not_contribute_to_visible_statistics(self) -> None:
+        display = self.new_display()
+        hidden = self.tracked(
+            "hidden",
+            AircraftClassification.COMMERCIAL,
+            Position(40.5, -70.0),
+        )
+        visible = self.tracked(
+            "visible",
+            AircraftClassification.PRIVATE,
+            Position(40.0, -69.5),
+        )
+        self.click_checkbox(display, 0)
+
+        with patch.object(display, "_draw_aircraft_stats") as draw_stats:
+            display.render(Position(40.0, -70.0), (hidden, visible), (), 100)
+
+        stats = draw_stats.call_args.args[0]
+        self.assertEqual(stats.total, 1)
+        self.assertEqual(stats.private, 1)
+        self.assertEqual(stats.commercial, 0)
+
+    @staticmethod
+    def click_checkbox(display: PygameRadarDisplay, index: int) -> None:
+        pygame.event.post(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": checkbox_row_rectangles()[index].center},
+            )
+        )
+        assert display.process_events()
+
+    def test_checkbox_rows_stay_outside_the_800_pixel_radar_circle(self) -> None:
+        for row in checkbox_row_rectangles():
+            nearest_x = max(row.left, min(400, row.right))
+            nearest_y = max(row.top, min(400, row.bottom))
+            self.assertGreaterEqual(
+                (nearest_x - 400) ** 2 + (nearest_y - 400) ** 2,
+                380**2,
+            )
+
 
 class FakeSnapshotPoller:
     def __init__(self, results: list[PollResult] | None = None) -> None:

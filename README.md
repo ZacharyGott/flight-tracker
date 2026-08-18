@@ -42,6 +42,22 @@ per hour and the highest aircraft in feet. A missing speed or altitude uses
 The highest marker and statistic use blue `(0, 128, 255)`. One aircraft that
 has both values uses a thin blue ring around its cherry-red marker.
 
+The upper-left display area shows five aircraft filters:
+
+- Commercial
+- Private
+- General aviation
+- Military
+- Unknown
+
+All five classifications are visible at startup. Click a checkbox row to hide
+or show that classification. Filtering changes the aircraft markers, paths,
+potential areas, selection card, and visible-aircraft statistics. Hidden
+aircraft remain tracked and appear again when you enable their classification.
+The filter state resets when the application starts. The filters use the
+best-effort display classification. They do not use provider aircraft type
+codes.
+
 The predicted-position endpoint uses dark green `(0, 128, 0)` for a current
 aircraft. It uses dark grey `(90, 90, 90)` for a stale aircraft. The observed
 aircraft keeps the bright green or light grey treatment.
