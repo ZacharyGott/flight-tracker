@@ -35,6 +35,13 @@ available. Click empty radar space to clear the card. The card uses `Track`
 because the provider supplies ground track, not true heading. A selected
 stale aircraft uses the grey display style.
 
+The top-right display area shows the number of visible aircraft and the count
+for each display classification. It also shows the fastest aircraft in miles
+per hour and the highest aircraft in feet. A missing speed or altitude uses
+`Unknown`. The fastest marker and statistic use cherry red `(210, 4, 45)`.
+The highest marker and statistic use blue `(0, 128, 255)`. One aircraft that
+has both values uses a thin blue ring around its cherry-red marker.
+
 The predicted-position endpoint uses dark green `(0, 128, 0)` for a current
 aircraft. It uses dark grey `(90, 90, 90)` for a stale aircraft. The observed
 aircraft keeps the bright green or light grey treatment.

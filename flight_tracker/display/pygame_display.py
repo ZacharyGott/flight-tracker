@@ -22,6 +22,7 @@ from .aircraft_card import (
     card_rect_near_aircraft,
     nearest_marker,
 )
+from .aircraft_stats import AircraftStats, aircraft_stats_lines, summarize_aircraft
 
 
 BLACK = (0, 0, 0)
@@ -30,6 +31,8 @@ DARK_GREEN = (0, 128, 0)
 RUNWAY_GREEN = DARK_GREEN
 LIGHT_GREY = (180, 180, 180)
 DARK_GREY = (90, 90, 90)
+CHERRY_RED = (210, 4, 45)
+BLUE = (0, 128, 255)
 EDGE_MARGIN = 20
 AIRCRAFT_RADIUS = 5
 AIRCRAFT_SPRITE_SIZE = 20
@@ -39,6 +42,10 @@ CARD_PADDING = 8
 CARD_LINE_GAP = 2
 CARD_BORDER_WIDTH = 1
 SELECTION_RING_RADIUS = AIRCRAFT_RADIUS + 7
+DUAL_HIGHLIGHT_RING_RADIUS = AIRCRAFT_RADIUS + 8
+STATS_FONT_SIZE = 14
+STATS_TOP = 8
+STATS_LINE_GAP = 1
 AIRCRAFT_ASSET_DIRECTORY = Path(__file__).with_name("assets")
 
 
@@ -56,6 +63,52 @@ def prediction_color(is_stale: bool) -> tuple[int, int, int]:
     return DARK_GREY if is_stale else DARK_GREEN
 
 
+def marker_color(item: TrackedAircraft, stats: AircraftStats) -> tuple[int, int, int]:
+    """Return the marker color for one visible aircraft."""
+
+    if item.aircraft is stats.fastest and item.aircraft is stats.highest:
+        return CHERRY_RED
+    if item.aircraft is stats.fastest:
+        return CHERRY_RED
+    if item.aircraft is stats.highest:
+        return BLUE
+    return LIGHT_GREY if item.is_stale else GREEN
+
+
+def has_dual_highlight_ring(item: TrackedAircraft, stats: AircraftStats) -> bool:
+    """Return whether one aircraft is both visible extremes."""
+
+    return item.aircraft is stats.fastest and item.aircraft is stats.highest
+
+
+def marker_draw_priority(item: TrackedAircraft, stats: AircraftStats) -> int:
+    """Return a draw priority that keeps highlighted markers in front."""
+
+    if item.aircraft is stats.fastest:
+        return 2
+    if item.aircraft is stats.highest:
+        return 1
+    return 0
+
+
+def statistics_text_rectangles(
+    window_size: tuple[int, int],
+    line_sizes: Sequence[tuple[int, int]],
+    top: int = STATS_TOP,
+    right_margin: int = EDGE_MARGIN,
+    line_gap: int = STATS_LINE_GAP,
+) -> tuple[tuple[int, int, int, int], ...]:
+    """Return right-aligned statistics rectangles for the square display."""
+
+    right = window_size[0] - right_margin
+    rectangles: list[tuple[int, int, int, int]] = []
+    y = top
+    for width, height in line_sizes:
+        rectangles.append((right - width, y, width, height))
+        y += height + line_gap
+    return tuple(rectangles)
+
+
 class PygameRadarDisplay:
     """Draw the radar on a Pygame window."""
 
@@ -69,6 +122,7 @@ class PygameRadarDisplay:
         self._radar_mask = pygame.Surface(self._window_size, pygame.SRCALPHA)
         self._aircraft_sprites = self._load_aircraft_sprites()
         self._card_font = pygame.font.Font(None, 18)
+        self._stats_font = pygame.font.Font(None, STATS_FONT_SIZE)
         self._visible_aircraft: dict[
             str, tuple[TrackedAircraft, tuple[int, int]]
         ] = {}
@@ -150,6 +204,7 @@ class PygameRadarDisplay:
             )
             for item, observed_point in visible_aircraft
         }
+        stats = summarize_aircraft(tuple(item.aircraft for item, _ in visible_aircraft))
         selected = self._selected_aircraft()
 
         for item, observed_point in visible_aircraft:
@@ -170,11 +225,23 @@ class PygameRadarDisplay:
                     width=1,
                 )
 
-        for item, observed_point in visible_aircraft:
-            color = LIGHT_GREY if item.is_stale else GREEN
+        marker_draw_order = sorted(
+            visible_aircraft,
+            key=lambda visible: marker_draw_priority(visible[0], stats),
+        )
+        for item, observed_point in marker_draw_order:
+            color = marker_color(item, stats)
             pixel_position = self._pixel_position(
                 observed_point, pixel_center, radar_radius
             )
+            if has_dual_highlight_ring(item, stats):
+                pygame.draw.circle(
+                    self._aircraft_layer,
+                    BLUE,
+                    pixel_position,
+                    DUAL_HIGHLIGHT_RING_RADIUS,
+                    width=1,
+                )
             track_degrees = item.aircraft.track_degrees
             if track_degrees is None:
                 pygame.draw.circle(
@@ -218,6 +285,7 @@ class PygameRadarDisplay:
             )
 
         self._blit_clipped_aircraft_layer(pixel_center, radar_radius)
+        self._draw_aircraft_stats(stats)
         if selected is not None:
             self._draw_aircraft_card(
                 selected[0],
@@ -227,6 +295,25 @@ class PygameRadarDisplay:
             )
 
         pygame.display.flip()
+
+    def _draw_aircraft_stats(self, stats: AircraftStats) -> None:
+        """Draw the visible-aircraft statistics outside the radar circle."""
+
+        lines = aircraft_stats_lines(stats)
+        surfaces = tuple(
+            self._stats_font.render(
+                line,
+                True,
+                CHERRY_RED if index == 3 else BLUE if index == 4 else GREEN,
+            )
+            for index, line in enumerate(lines)
+        )
+        rectangles = statistics_text_rectangles(
+            self._window_size,
+            tuple(surface.get_size() for surface in surfaces),
+        )
+        for surface, rectangle in zip(surfaces, rectangles, strict=True):
+            self._screen.blit(surface, rectangle[:2])
 
     def _draw_runways(
         self,
@@ -373,7 +460,7 @@ class PygameRadarDisplay:
     def _load_aircraft_sprites() -> dict[
         tuple[AircraftSprite, tuple[int, int, int]], pygame.Surface
     ]:
-        """Load each sprite mask and its two display colors once."""
+        """Load each sprite mask and its four display colors once."""
 
         sprites: dict[
             tuple[AircraftSprite, tuple[int, int, int]], pygame.Surface
@@ -386,7 +473,7 @@ class PygameRadarDisplay:
                 image, (AIRCRAFT_SPRITE_SIZE, AIRCRAFT_SPRITE_SIZE)
             )
             mask = pygame.mask.from_surface(image)
-            for color in (GREEN, LIGHT_GREY):
+            for color in (GREEN, LIGHT_GREY, CHERRY_RED, BLUE):
                 sprites[(sprite_kind, color)] = mask.to_surface(
                     setcolor=(*color, 255), unsetcolor=(0, 0, 0, 0)
                 ).convert_alpha()

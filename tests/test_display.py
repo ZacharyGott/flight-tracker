@@ -1,6 +1,7 @@
 """Offline tests for configuration, projection, and the tracker loop."""
 
 import io
+import os
 import unittest
 from collections.abc import Sequence
 from contextlib import redirect_stdout
@@ -8,14 +9,28 @@ from datetime import datetime, timezone
 from math import cos, radians
 from pathlib import Path
 
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+import pygame
+
 from flight_tracker.app import TrackerApplication
 from flight_tracker.configuration import TrackerSettings, parse_settings
 from flight_tracker.display.pygame_display import (
+    BLUE,
+    CHERRY_RED,
     DARK_GREEN,
     DARK_GREY,
+    GREEN,
+    LIGHT_GREY,
+    STATS_FONT_SIZE,
     calculate_radar_radius,
+    has_dual_highlight_ring,
+    marker_color,
+    marker_draw_priority,
     prediction_color,
+    statistics_text_rectangles,
 )
+from flight_tracker.display.aircraft_stats import summarize_aircraft
 from flight_tracker.display.aircraft_card import (
     aircraft_card_lines,
     card_rect_near_aircraft,
@@ -145,6 +160,92 @@ class PredictionDisplayColorTests(unittest.TestCase):
 
     def test_stale_prediction_uses_dark_grey(self) -> None:
         self.assertEqual(prediction_color(True), DARK_GREY)
+
+
+class AircraftMarkerColorTests(unittest.TestCase):
+    @staticmethod
+    def tracked(aircraft: Aircraft, is_stale: bool = False) -> TrackedAircraft:
+        return TrackedAircraft(
+            aircraft=aircraft,
+            estimated_position=None,
+            potential_radius_nm=None,
+            is_stale=is_stale,
+        )
+
+    def test_normal_current_marker_is_green(self) -> None:
+        item = self.tracked(Aircraft(icao_hex="current"))
+
+        self.assertEqual(marker_color(item, summarize_aircraft((item.aircraft,))), GREEN)
+
+    def test_normal_stale_marker_is_grey(self) -> None:
+        item = self.tracked(Aircraft(icao_hex="stale"), is_stale=True)
+
+        self.assertEqual(
+            marker_color(item, summarize_aircraft((item.aircraft,))), LIGHT_GREY
+        )
+
+    def test_fastest_marker_is_cherry_red(self) -> None:
+        aircraft = Aircraft(icao_hex="fastest", ground_speed_knots=200)
+        item = self.tracked(aircraft)
+
+        self.assertEqual(marker_color(item, summarize_aircraft((aircraft,))), CHERRY_RED)
+
+    def test_highest_marker_is_blue(self) -> None:
+        aircraft = Aircraft(icao_hex="highest", altitude_feet=20000)
+        item = self.tracked(aircraft)
+
+        self.assertEqual(marker_color(item, summarize_aircraft((aircraft,))), BLUE)
+
+    def test_both_extremes_use_cherry_red_and_a_blue_ring(self) -> None:
+        aircraft = Aircraft(
+            icao_hex="both",
+            ground_speed_knots=200,
+            altitude_feet=20000,
+        )
+        item = self.tracked(aircraft)
+        stats = summarize_aircraft((aircraft,))
+
+        self.assertEqual(marker_color(item, stats), CHERRY_RED)
+        self.assertTrue(has_dual_highlight_ring(item, stats))
+
+    def test_highlighted_markers_draw_after_normal_markers(self) -> None:
+        normal = Aircraft(icao_hex="normal")
+        highest = Aircraft(icao_hex="highest", altitude_feet=20000)
+        fastest = Aircraft(icao_hex="fastest", ground_speed_knots=200)
+        stats = summarize_aircraft((normal, highest, fastest))
+
+        self.assertLess(
+            marker_draw_priority(self.tracked(normal), stats),
+            marker_draw_priority(self.tracked(highest), stats),
+        )
+        self.assertLess(
+            marker_draw_priority(self.tracked(normal), stats),
+            marker_draw_priority(self.tracked(fastest), stats),
+        )
+
+
+class StatisticsDisplayBoundsTests(unittest.TestCase):
+    def test_statistics_text_rectangles_stay_outside_800_pixel_circle(self) -> None:
+        pygame.font.init()
+        font = pygame.font.Font(None, STATS_FONT_SIZE)
+        lines = (
+            "Aircraft 12",
+            "Commercial 4 · Private 2 · GA 3",
+            "Military 1 · Unknown 2",
+            "Fastest AAL2741 · 483 mph",
+            "Highest N123AA · 35,000 ft",
+        )
+        rectangles = statistics_text_rectangles(
+            (800, 800), tuple(font.size(line) for line in lines)
+        )
+
+        for x, y, width, height in rectangles:
+            nearest_x = max(x, min(400, x + width))
+            nearest_y = max(y, min(400, y + height))
+            self.assertGreaterEqual(
+                (nearest_x - 400) ** 2 + (nearest_y - 400) ** 2,
+                380**2,
+            )
 
 
 class AircraftCardTests(unittest.TestCase):

@@ -25,7 +25,7 @@ def aircraft_card_lines(aircraft: Aircraft) -> tuple[str, ...]:
     registration = _text_or_unknown(aircraft.registration)
 
     return (
-        _title_text(aircraft),
+        aircraft_display_name(aircraft),
         f"{classification} · {aircraft_type}",
         f"Registration: {registration}",
         f"Altitude: {_format_altitude(aircraft.altitude_feet)}",
@@ -114,8 +114,8 @@ def _text_or_unknown(value: str | None) -> str:
     return value.strip()
 
 
-def _title_text(aircraft: Aircraft) -> str:
-    """Return a useful title with provider identifiers as fallbacks."""
+def aircraft_display_name(aircraft: Aircraft) -> str:
+    """Return the display name with provider identifiers as fallbacks."""
 
     for value in (aircraft.callsign, aircraft.registration):
         if value is not None and value.strip():
