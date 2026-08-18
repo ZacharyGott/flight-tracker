@@ -2,6 +2,29 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+
+
+class AirframeKind(Enum):
+    """Broad airframe kind derived from provider emitter data."""
+
+    UNKNOWN = "unknown"
+    AIRPLANE = "airplane"
+    HELICOPTER = "helicopter"
+    GLIDER = "glider"
+    LIGHTER_THAN_AIR = "lighter_than_air"
+    UNMANNED = "unmanned"
+    OTHER = "other"
+
+
+class AircraftClassification(Enum):
+    """Best-effort display classification for aircraft usage."""
+
+    UNKNOWN = "unknown"
+    MILITARY = "military"
+    COMMERCIAL = "commercial"
+    PRIVATE = "private"
+    GENERAL_AVIATION = "general_aviation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +50,8 @@ class Aircraft:
     callsign: str | None = None
     registration: str | None = None
     aircraft_type: str | None = None
+    airframe_kind: AirframeKind = AirframeKind.UNKNOWN
+    classification: AircraftClassification = AircraftClassification.UNKNOWN
     altitude_feet: int | None = None
     track_degrees: float | None = None
     ground_speed_knots: float | None = None

@@ -9,7 +9,12 @@ from math import cos, radians
 
 from flight_tracker.app import TrackerApplication
 from flight_tracker.configuration import TrackerSettings, parse_settings
-from flight_tracker.display.pygame_display import calculate_radar_radius
+from flight_tracker.display.pygame_display import (
+    DARK_GREEN,
+    DARK_GREY,
+    calculate_radar_radius,
+    prediction_color,
+)
 from flight_tracker.display.projection import (
     RadarPoint,
     clip_segment_to_unit_circle,
@@ -121,6 +126,14 @@ class DisplayBoundsTests(unittest.TestCase):
 
         self.assertEqual(radius, 380)
         self.assertEqual((center - radius, center + radius), (20, 780))
+
+
+class PredictionDisplayColorTests(unittest.TestCase):
+    def test_current_prediction_uses_dark_green(self) -> None:
+        self.assertEqual(prediction_color(False), DARK_GREEN)
+
+    def test_stale_prediction_uses_dark_grey(self) -> None:
+        self.assertEqual(prediction_color(True), DARK_GREY)
 
 
 class FakeSnapshotPoller:

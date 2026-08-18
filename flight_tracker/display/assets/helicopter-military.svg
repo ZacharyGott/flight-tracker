@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Project-owned silhouette. See assets/README.md for the CC0 reference. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path fill="#000" d="M14 46h72v6H14zM47 8h6v84h-6z"/>
+  <path fill="#000" d="M50 27c-14 0-22 7-22 19v14c0 10 8 17 22 17s22-7 22-17V46c0-12-8-19-22-19Zm-14 20c0-7 5-12 14-12s14 5 14 12v12c0 6-5 11-14 11s-14-5-14-11z"/>
+  <path fill="#000" d="M28 57H12L4 65l4 4 9-6h11zm44 0h16l8 8-4 4-9-6H72zM28 67l-7 13h11l6-10zm44 0 7 13H68l-6-10z"/>
+</svg>

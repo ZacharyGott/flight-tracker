@@ -14,17 +14,20 @@ from .projection import (
     project_position,
     project_position_unclipped,
 )
+from .sprites import AircraftSprite, select_aircraft_sprite
 
 
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
+DARK_GREEN = (0, 128, 0)
 LIGHT_GREY = (180, 180, 180)
+DARK_GREY = (90, 90, 90)
 EDGE_MARGIN = 20
 AIRCRAFT_RADIUS = 5
 AIRCRAFT_SPRITE_SIZE = 20
 ESTIMATE_RADIUS = 2
 POTENTIAL_ALPHA = 40
-AIRCRAFT_ASSET_PATH = Path(__file__).with_name("assets") / "aircraft.svg"
+AIRCRAFT_ASSET_DIRECTORY = Path(__file__).with_name("assets")
 
 
 def calculate_radar_radius(
@@ -33,6 +36,12 @@ def calculate_radar_radius(
     """Return the pixel radius that fits inside the display."""
 
     return min(window_size) // 2 - edge_margin
+
+
+def prediction_color(is_stale: bool) -> tuple[int, int, int]:
+    """Return the endpoint color for a predicted position."""
+
+    return DARK_GREY if is_stale else DARK_GREEN
 
 
 class PygameRadarDisplay:
@@ -46,19 +55,7 @@ class PygameRadarDisplay:
         self._window_size = (window_size, window_size)
         self._aircraft_layer = pygame.Surface(self._window_size, pygame.SRCALPHA)
         self._radar_mask = pygame.Surface(self._window_size, pygame.SRCALPHA)
-        aircraft_image = pygame.image.load(AIRCRAFT_ASSET_PATH).convert_alpha()
-        aircraft_image = pygame.transform.smoothscale(
-            aircraft_image, (AIRCRAFT_SPRITE_SIZE, AIRCRAFT_SPRITE_SIZE)
-        )
-        aircraft_mask = pygame.mask.from_surface(aircraft_image)
-        self._aircraft_sprites = {
-            GREEN: aircraft_mask.to_surface(
-                setcolor=(*GREEN, 255), unsetcolor=(0, 0, 0, 0)
-            ).convert_alpha(),
-            LIGHT_GREY: aircraft_mask.to_surface(
-                setcolor=(*LIGHT_GREY, 255), unsetcolor=(0, 0, 0, 0)
-            ).convert_alpha(),
-        }
+        self._aircraft_sprites = self._load_aircraft_sprites()
 
     def process_events(self) -> bool:
         """Process close and Escape events."""
@@ -138,21 +135,6 @@ class PygameRadarDisplay:
                     width=1,
                 )
 
-        for item, _ in visible_aircraft:
-            estimated = item.estimated_position
-            if estimated is None:
-                continue
-            estimated_point = project_position(center, estimated, search_radius_nm)
-            if estimated_point is None:
-                continue
-            color = LIGHT_GREY if item.is_stale else GREEN
-            pygame.draw.circle(
-                self._aircraft_layer,
-                color,
-                self._pixel_position(estimated_point, pixel_center, radar_radius),
-                ESTIMATE_RADIUS,
-            )
-
         for item, observed_point in visible_aircraft:
             color = LIGHT_GREY if item.is_stale else GREEN
             pixel_position = self._pixel_position(
@@ -168,10 +150,26 @@ class PygameRadarDisplay:
                 )
                 continue
             # The source sprite points north. Pygame needs a negative screen angle.
+            sprite_kind = select_aircraft_sprite(item.aircraft)
             sprite = pygame.transform.rotate(
-                self._aircraft_sprites[color], -track_degrees
+                self._aircraft_sprites[(sprite_kind, color)], -track_degrees
             )
             self._aircraft_layer.blit(sprite, sprite.get_rect(center=pixel_position))
+
+        # Draw the prediction endpoint last so it stays visible over the sprite.
+        for item, _ in visible_aircraft:
+            estimated = item.estimated_position
+            if estimated is None:
+                continue
+            estimated_point = project_position(center, estimated, search_radius_nm)
+            if estimated_point is None:
+                continue
+            pygame.draw.circle(
+                self._aircraft_layer,
+                prediction_color(item.is_stale),
+                self._pixel_position(estimated_point, pixel_center, radar_radius),
+                ESTIMATE_RADIUS,
+            )
 
         self._blit_clipped_aircraft_layer(pixel_center, radar_radius)
 
@@ -242,6 +240,29 @@ class PygameRadarDisplay:
         """Limit the display frame rate."""
 
         self._clock.tick(frame_rate)
+
+    @staticmethod
+    def _load_aircraft_sprites() -> dict[
+        tuple[AircraftSprite, tuple[int, int, int]], pygame.Surface
+    ]:
+        """Load each sprite mask and its two display colors once."""
+
+        sprites: dict[
+            tuple[AircraftSprite, tuple[int, int, int]], pygame.Surface
+        ] = {}
+        for sprite_kind in AircraftSprite:
+            image = pygame.image.load(
+                AIRCRAFT_ASSET_DIRECTORY / sprite_kind.filename
+            ).convert_alpha()
+            image = pygame.transform.smoothscale(
+                image, (AIRCRAFT_SPRITE_SIZE, AIRCRAFT_SPRITE_SIZE)
+            )
+            mask = pygame.mask.from_surface(image)
+            for color in (GREEN, LIGHT_GREY):
+                sprites[(sprite_kind, color)] = mask.to_surface(
+                    setcolor=(*color, 255), unsetcolor=(0, 0, 0, 0)
+                ).convert_alpha()
+        return sprites
 
     def close(self) -> None:
         """Close the Pygame display."""

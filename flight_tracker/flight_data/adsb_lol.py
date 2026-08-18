@@ -4,6 +4,10 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import TypeGuard, cast
 
+from flight_tracker.classification import (
+    airframe_kind_from_emitter_category,
+    classify_aircraft,
+)
 from flight_tracker.models import Aircraft, Position
 
 from .exceptions import ProviderHttpError, ProviderResponseError
@@ -86,13 +90,24 @@ class AdsbLolClient:
             if position is not None and seen_position_seconds is not None
             else None
         )
+        callsign = _optional_text(record.get("flight"))
+        registration = _optional_text(record.get("r"))
+        aircraft_type = _optional_text(record.get("t"))
+        category = record.get("category")
         try:
             return Aircraft(
                 icao_hex=raw_hex.strip(),
                 position=position,
-                callsign=_optional_text(record.get("flight")),
-                registration=_optional_text(record.get("r")),
-                aircraft_type=_optional_text(record.get("t")),
+                callsign=callsign,
+                registration=registration,
+                aircraft_type=aircraft_type,
+                airframe_kind=airframe_kind_from_emitter_category(category),
+                classification=classify_aircraft(
+                    category=category,
+                    callsign=callsign,
+                    registration=registration,
+                    military=_has_military_flag(record.get("dbFlags")),
+                ),
                 altitude_feet=_optional_int(record.get("alt_baro")),
                 track_degrees=_optional_float(record.get("track")),
                 ground_speed_knots=_optional_float(record.get("gs")),
@@ -142,3 +157,9 @@ def _optional_float(value: object) -> float | None:
 
 def _is_real(value: object) -> TypeGuard[int | float]:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _has_military_flag(value: object) -> bool:
+    """Return whether the provider's military bit is set."""
+
+    return isinstance(value, int) and not isinstance(value, bool) and bool(value & 1)

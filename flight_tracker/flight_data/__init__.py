@@ -10,11 +10,18 @@ from .exceptions import (
 from .models import NearbyQuery, NearbySnapshot
 from .poller import PollResult, SnapshotPoller
 from .transport import HttpResponse, HttpTransport, RequestsTransport
-from flight_tracker.models import Aircraft, Position
+from flight_tracker.models import (
+    AirframeKind,
+    Aircraft,
+    AircraftClassification,
+    Position,
+)
 
 __all__ = [
     "AdsbLolClient",
+    "AirframeKind",
     "Aircraft",
+    "AircraftClassification",
     "FlightDataError",
     "HttpResponse",
     "HttpTransport",

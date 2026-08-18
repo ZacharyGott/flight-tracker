@@ -17,6 +17,7 @@ from flight_tracker.flight_data import (
     RequestsTransport,
     TransportError,
 )
+from flight_tracker.models import AirframeKind, AircraftClassification
 
 
 class FakeTransport:
@@ -73,6 +74,8 @@ class AdsbLolClientTests(unittest.TestCase):
                             "track": 270.5,
                             "gs": 420.0,
                             "seen_pos": 2.5,
+                            "category": "A3",
+                            "dbFlags": 0,
                             "type": "adsb_icao",
                         }
                     ],
@@ -96,6 +99,10 @@ class AdsbLolClientTests(unittest.TestCase):
         self.assertEqual(snapshot.aircraft[0].callsign, "TEST123")
         self.assertEqual(snapshot.aircraft[0].registration, "N123AB")
         self.assertEqual(snapshot.aircraft[0].aircraft_type, "B738")
+        self.assertEqual(snapshot.aircraft[0].airframe_kind, AirframeKind.AIRPLANE)
+        self.assertEqual(
+            snapshot.aircraft[0].classification, AircraftClassification.UNKNOWN
+        )
         self.assertEqual(snapshot.aircraft[0].position, Position(40.25, -73.75))
         self.assertEqual(snapshot.aircraft[0].altitude_feet, 35000)
         self.assertEqual(snapshot.aircraft[0].track_degrees, 270.5)
@@ -135,10 +142,78 @@ class AdsbLolClientTests(unittest.TestCase):
         self.assertIsNone(aircraft.callsign)
         self.assertIsNone(aircraft.registration)
         self.assertIsNone(aircraft.aircraft_type)
+        self.assertEqual(aircraft.airframe_kind, AirframeKind.UNKNOWN)
+        self.assertEqual(aircraft.classification, AircraftClassification.UNKNOWN)
         self.assertIsNone(aircraft.altitude_feet)
         self.assertIsNone(aircraft.track_degrees)
         self.assertIsNone(aircraft.ground_speed_knots)
         self.assertIsNone(aircraft.position_observed_at)
+
+    def test_converts_military_and_usage_fields(self) -> None:
+        response = HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+                    "now": 1_725_000_000,
+                    "ac": [
+                        {
+                            "hex": "commercial",
+                            "flight": "AAL2741",
+                            "r": "N123AA",
+                            "category": "A3",
+                        },
+                        {
+                            "hex": "general-aviation",
+                            "flight": "N292SP",
+                            "r": "N292SP",
+                            "category": "A1",
+                        },
+                        {
+                            "hex": "private",
+                            "flight": "N5GL",
+                            "r": "N5GL",
+                            "category": "A3",
+                        },
+                        {"hex": "civilian-helicopter", "category": "A7"},
+                        {"hex": "military-helicopter", "category": "A7", "dbFlags": 1},
+                    ],
+                }
+            ),
+        )
+
+        aircraft = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(40, -74, 20)
+        ).aircraft
+
+        self.assertEqual(aircraft[0].classification, AircraftClassification.COMMERCIAL)
+        self.assertEqual(
+            aircraft[1].classification, AircraftClassification.GENERAL_AVIATION
+        )
+        self.assertEqual(aircraft[2].classification, AircraftClassification.PRIVATE)
+        self.assertEqual(aircraft[3].airframe_kind, AirframeKind.HELICOPTER)
+        self.assertEqual(aircraft[4].classification, AircraftClassification.MILITARY)
+
+    def test_ignores_malformed_optional_classification_fields(self) -> None:
+        response = HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+                    "now": 1_725_000_000,
+                    "ac": [{
+                        "hex": "abc123",
+                        "category": {"bad": "value"},
+                        "dbFlags": {"bad": "value"},
+                    }],
+                }
+            ),
+        )
+
+        aircraft = AdsbLolClient(FakeTransport(response)).nearby(
+            NearbyQuery(40, -74, 20)
+        ).aircraft[0]
+
+        self.assertEqual(aircraft.airframe_kind, AirframeKind.UNKNOWN)
+        self.assertEqual(aircraft.classification, AircraftClassification.UNKNOWN)
 
     def test_missing_ground_speed_produces_none(self) -> None:
         response = HttpResponse(
